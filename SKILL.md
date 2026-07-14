@@ -1,6 +1,6 @@
 ---
 name: blender-bilingual-mo
-description: Build, verify, install, update, or uninstall Simplified Chinese and English bilingual GNU MO language packs for Blender 4.x and 5.x in this repository. Use when an AI agent needs to generate a pack from an installed Blender, a supplied official zh_HANS blender.mo, or an exact Blender release; change the bilingual display rule; validate catalogs and manifests; or manage the macOS Blender installation and saved language preference.
+description: Build, verify, install, update, or uninstall Simplified Chinese and English bilingual GNU MO language packs for Blender 4.x and 5.x in this repository. Use when an AI agent needs to generate a pack from an installed Blender, a supplied official zh_HANS blender.mo, or an exact Blender release; change the bilingual display rule; validate catalogs and manifests; or manage a macOS or Windows Blender installation and saved language preference.
 ---
 
 # Blender Bilingual MO
@@ -56,7 +56,7 @@ Substitute the affected version in the last two commands. Confirm that no `.po`,
 
 When changing MO parsing, transformation, download, installation, or preference behavior, add a focused test in `tests/test_bilingual.py` before considering the change complete.
 
-## Install on macOS
+## Install on macOS or Windows
 
 Treat installation as an external mutation because it edits `/Applications/Blender.app` and the user's Blender preferences. Obtain explicit user authorization before running the real command. Start with:
 
@@ -69,6 +69,14 @@ python3 scripts/bilingual.py install \
 
 Then, when authorized, run the same command without `--dry-run`. By default it installs the MO, adds the managed language entry, and saves `zh_HANS@bilingual` as the current user language. Use `--no-activate` only when requested.
 
+On Windows, run an Administrator PowerShell and pass the full `blender.exe` path explicitly:
+
+```powershell
+py scripts\bilingual.py install `
+  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
+  --version 5.1.2
+```
+
 After installation, verify the installed MO checksum matches the pack. Verify persisted preference by starting Blender again and reading:
 
 ```bash
@@ -79,7 +87,7 @@ After installation, verify the installed MO checksum matches the pack. Verify pe
 
 Run this restart check with normal macOS system access. A sandboxed Blender process may crash during Metal GPU detection even with `--factory-startup`; inspect the crash stack before attributing that failure to the language pack. Acceptance requires `ACTIVE_LANGUAGE=zh_HANS@bilingual` outside the restricted sandbox.
 
-## Uninstall on macOS
+## Uninstall on macOS or Windows
 
 Preview first, then obtain authorization before mutation:
 

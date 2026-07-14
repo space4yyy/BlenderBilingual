@@ -160,7 +160,8 @@ def atomic_write(path: Path, data: bytes) -> None:
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(fd, mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
@@ -575,7 +576,7 @@ def install_pack(
                 pass
         if isinstance(exc, BilingualError):
             raise
-        raise BilingualError(f"无法修改 Blender.app：{exc}") from exc
+        raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
     activation = "，已设为当前用户语言" if activate else ""
     return f"已安装 Blender {detected_version} 双语语言，语言 ID {free_id}{activation}"
 
@@ -597,7 +598,7 @@ def uninstall_pack(blender: Path, dry_run: bool, reset_language: bool = True) ->
         if destination_root.exists():
             shutil.rmtree(destination_root)
     except OSError as exc:
-        raise BilingualError(f"无法修改 Blender.app：{exc}") from exc
+        raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
     return f"已卸载 Blender {detected_version} 双语语言"
 
 
@@ -614,8 +615,14 @@ def create_parser() -> argparse.ArgumentParser:
     verify.add_argument("--version", required=True)
 
     for name in ("install", "uninstall"):
-        command = subparsers.add_parser(name, help=f"{name} macOS Blender 双语语言")
-        command.add_argument("--blender", type=Path, default=Path("/Applications/Blender.app"))
+        command = subparsers.add_parser(name, help=f"{name} Blender 双语语言")
+        command.add_argument(
+            "--blender",
+            type=Path,
+            default=Path("/Applications/Blender.app") if sys.platform == "darwin" else None,
+            required=sys.platform != "darwin",
+            help="Blender.app、安装目录或 blender.exe 路径",
+        )
         command.add_argument("--dry-run", action="store_true")
         if name == "install":
             command.add_argument("--version", help="可选的目标版本二次校验")

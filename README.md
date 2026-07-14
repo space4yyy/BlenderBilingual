@@ -4,6 +4,71 @@
 
 项目只保存最终双语 MO 与 JSON 元数据，不生成或归档 PO。含 `%s`、`%d`、`{name}` 等运行时占位符的消息会保留官方中文，避免重复占位符引发格式化错误。
 
+## 快速开始
+
+以下示例安装项目中已有的 Blender 5.1.2 双语包。Blender 的精确版本必须与 `packs/` 下的版本目录一致。
+
+### 1. 脚本安装
+
+脚本会备份 `languages` 文件、安装 MO、添加独立语言项，并把当前用户语言设为 `zh_HANS@bilingual`。先关闭 Blender，再执行安装。
+
+macOS：
+
+```bash
+python3 scripts/bilingual.py install \
+  --dry-run \
+  --blender /Applications/Blender.app \
+  --version 5.1.2
+
+python3 scripts/bilingual.py install \
+  --blender /Applications/Blender.app \
+  --version 5.1.2
+```
+
+Windows：请在“以管理员身份运行”的 PowerShell 或 Windows Terminal 中执行，并把路径改为实际安装位置。
+
+```powershell
+py scripts\bilingual.py install `
+  --dry-run `
+  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
+  --version 5.1.2
+
+py scripts\bilingual.py install `
+  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
+  --version 5.1.2
+```
+
+安装成功后，再次打开 Blender 即为双语界面。若只安装文件、不修改当前用户语言，请添加 `--no-activate`。
+
+### 2. 手动安装
+
+1. 关闭 Blender，并备份安装目录内的 `datafiles/locale/languages`。
+2. 在 `datafiles/locale/` 下创建 `zh_HANS@bilingual/LC_MESSAGES/`。
+3. 将对应版本的 `packs/<版本>/zh_HANS@bilingual/LC_MESSAGES/blender.mo` 复制到新目录。
+4. 打开 `datafiles/locale/languages`，选择一个未占用的数字 ID，并添加：
+
+   ```text
+   60:Chinese (Simplified, Bilingual) - 简中 English:zh_HANS@bilingual:100%
+   ```
+
+   如果 ID 60 已存在，请换成其他未占用数字；同一文件中的 ID 必须唯一。
+
+5. 启动 Blender，进入 `Edit > Preferences > Interface > Translation > Language`，选择 `Chinese (Simplified, Bilingual) - 简中 English`，然后保存偏好。
+
+macOS 目标目录：
+
+```text
+/Applications/Blender.app/Contents/Resources/5.1/datafiles/locale/
+```
+
+Windows 默认目标目录：
+
+```text
+C:\Program Files\Blender Foundation\Blender 5.1\5.1\datafiles\locale\
+```
+
+Windows 若使用便携版，目标目录位于 `blender.exe` 同级的 `5.1\datafiles\locale\`。手动安装不会自动修改用户偏好，必须完成第 5 步。
+
 ## 已有语言包
 
 - Blender 5.1.2，来源为官方 macOS Blender 5.1.2（构建哈希 `ec6e62d40fa9`）。
@@ -14,7 +79,7 @@
 
 - Python 3.10 或更高版本。
 - 生成、校验和远程提取只使用 Python 标准库。
-- 自动安装/卸载首版支持 macOS Blender.app；生成的 MO 本身不受操作系统限制。
+- 自动安装/卸载支持 macOS Blender.app 和 Windows 标准/便携目录；生成的 MO 本身不受操作系统限制。
 
 ## 生成语言包
 
@@ -57,7 +122,7 @@ python3 -m unittest discover -v
 
 校验包括 MO 结构、版本、消息键摘要、消息统计和文件 SHA-256。
 
-## macOS 安装与卸载
+## 安装与卸载详解
 
 先预览操作：
 
@@ -65,7 +130,7 @@ python3 -m unittest discover -v
 python3 scripts/bilingual.py install --dry-run
 ```
 
-安装到默认 `/Applications/Blender.app`：
+macOS 安装到默认 `/Applications/Blender.app`：
 
 ```bash
 python3 scripts/bilingual.py install
@@ -93,6 +158,17 @@ python3 scripts/bilingual.py install \
 ```bash
 python3 scripts/bilingual.py uninstall --dry-run
 python3 scripts/bilingual.py uninstall
+```
+
+Windows 卸载时必须显式指定 `blender.exe`，并使用管理员终端：
+
+```powershell
+py scripts\bilingual.py uninstall `
+  --dry-run `
+  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
+
+py scripts\bilingual.py uninstall `
+  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
 ```
 
 卸载前会把当前用户语言切回官方简中，然后只移除本项目管理的菜单区块和 `zh_HANS@bilingual` 目录，不覆盖其他语言修改。可用 `--no-reset-language` 跳过偏好修改。Blender 更新可能清除自定义语言，更新后重新运行安装命令即可。
