@@ -1,0 +1,24 @@
+{
+  "blender_version": "5.1.2",
+  "display_format": "中文 English",
+  "language": "zh_HANS@bilingual",
+  "output": {
+    "bilingual": 36754,
+    "catalog_key_sha256": "432f46345b45bad2ee4861eca012e7f3ae1c381daa980e7715a3c62792206267",
+    "contexts": 5210,
+    "dynamic": 1258,
+    "header": 1,
+    "messages": 38012,
+    "mo_sha256": "5278b968113ac12720de355d023d260e16d283663801aecd871261885383e194",
+    "path": "zh_HANS@bilingual/LC_MESSAGES/blender.mo",
+    "plurals": 0
+  },
+  "resource_version": "5.1",
+  "rule_version": 3,
+  "schema_version": 1,
+  "source": {
+    "blender": "/Applications/Blender.app",
+    "mo_sha256": "fc35ade54bee36bf5ff6ec974a372e91a5ca34426b023529fdbfb366c66fa4c1",
+    "type": "local_blender"
+  }
+}
