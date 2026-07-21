@@ -58,7 +58,7 @@ When changing MO parsing, transformation, download, installation, or preference 
 
 ## Install on macOS or Windows
 
-Treat installation as an external mutation because it edits `/Applications/Blender.app` and the user's Blender preferences. Obtain explicit user authorization before running the real command. Start with:
+Treat installation as an external mutation because it edits the Blender installation directory and the user's Blender preferences. Obtain explicit user authorization before running the real command. Start with:
 
 ```bash
 python3 scripts/bilingual.py install \
@@ -68,6 +68,8 @@ python3 scripts/bilingual.py install \
 ```
 
 Then, when authorized, run the same command without `--dry-run`. By default it installs the MO, adds the managed language entry, and saves `zh_HANS@bilingual` as the current user language. Use `--no-activate` only when requested.
+
+If the exact detected Blender version has no pack, `install` automatically builds it from that installation's official `zh_HANS` MO and verifies it before mutation. `--dry-run` must only report this pending build and must not create files. Never auto-rebuild a partially present, corrupt, or failed-verification pack; surface that error for inspection.
 
 On Windows, run an Administrator PowerShell and pass the full `blender.exe` path explicitly:
 

@@ -6,7 +6,7 @@
 
 ## 快速开始
 
-以下示例安装项目中已有的 Blender 5.1.2 双语包。Blender 的精确版本必须与 `packs/` 下的版本目录一致。
+脚本会读取本地 Blender 的精确版本。若 `packs/` 中没有对应版本，会自动使用该 Blender 自带的官方简中 MO 生成并校验双语包，然后继续安装。
 
 ### 1. 脚本安装
 
@@ -17,12 +17,10 @@ macOS：
 ```bash
 python3 scripts/bilingual.py install \
   --dry-run \
-  --blender /Applications/Blender.app \
-  --version 5.1.2
+  --blender /Applications/Blender.app
 
 python3 scripts/bilingual.py install \
-  --blender /Applications/Blender.app \
-  --version 5.1.2
+  --blender /Applications/Blender.app
 ```
 
 Windows：请在“以管理员身份运行”的 PowerShell 或 Windows Terminal 中执行，并把路径改为实际安装位置。
@@ -30,15 +28,13 @@ Windows：请在“以管理员身份运行”的 PowerShell 或 Windows Termina
 ```powershell
 py scripts\bilingual.py install `
   --dry-run `
-  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
-  --version 5.1.2
+  --blender "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 
 py scripts\bilingual.py install `
-  --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
-  --version 5.1.2
+  --blender "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 ```
 
-安装成功后，再次打开 Blender 即为双语界面。若只安装文件、不修改当前用户语言，请添加 `--no-activate`。
+`--version 5.2.0` 是可选的二次校验；省略时以检测到的本地版本为准。`--dry-run` 只报告将自动生成，不写入 pack 或 Blender。安装成功后，再次打开 Blender 即为双语界面。若只安装文件、不修改当前用户语言，请添加 `--no-activate`。
 
 ### 2. 手动安装
 
@@ -72,6 +68,7 @@ Windows 若使用便携版，目标目录位于 `blender.exe` 同级的 `5.1\dat
 ## 已有语言包
 
 - Blender 5.1.2，来源为官方 macOS Blender 5.1.2（构建哈希 `ec6e62d40fa9`）。
+- Blender 5.2.0 LTS，来源为官方 macOS Blender 5.2.0（构建哈希 `fbe6228777e7`）。
 
 语言代码为 `zh_HANS@bilingual`，安装后会作为独立语言出现，不覆盖官方 `zh_HANS` 简体中文。Blender 5.1 会将它解析为简体中文脚本的 `bilingual` 变体，并搜索同名语言目录。
 
@@ -152,6 +149,8 @@ python3 scripts/bilingual.py install \
 4. 原子写入双语 MO。
 
 安装器会使用 Blender 自身的后台模式加载现有用户偏好，只把当前语言改为 `zh_HANS@bilingual` 并保存；其他偏好保持不变。安装完成后再次打开 Blender 即为双语界面。若只想安装而不自动启用，可添加 `--no-activate`。
+
+如果当前 Blender 已升级且仓库没有对应版本，`install` 会先从本地官方简中 MO 自动生成 pack。已有 pack 必须通过完整校验；文件缺失或损坏时安装器会停止，不会静默覆盖。
 
 卸载：
 

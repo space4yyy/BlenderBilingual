@@ -192,6 +192,56 @@ class InstallTests(unittest.TestCase):
         build_from_source(source, "5.1.2", "5.1", {"type": "provided_mo"}, packs)
         return datafiles, packs
 
+    def prepare_without_pack(self, root: Path) -> tuple[Path, Path]:
+        datafiles = root / "app-data" / "5.2" / "datafiles"
+        locale = datafiles / "locale"
+        official = locale / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
+        official.parent.mkdir(parents=True)
+        official.write_bytes(fixture_catalog().to_bytes())
+        (locale / "languages").write_text(
+            "# languages\n1:English (US):en_US:100%\n", encoding="utf-8"
+        )
+        return datafiles, root / "packs"
+
+    def test_install_builds_missing_pack_from_local_blender(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, packs = self.prepare_without_pack(root)
+            layout = (root / "blender", datafiles, "5.2.0")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                result = install_pack(root / "Blender.app", None, False, packs, activate=False)
+            output, manifest = pack_paths("5.2.0", packs)
+            self.assertTrue(output.is_file())
+            self.assertTrue(manifest.is_file())
+            self.assertIn("已自动生成", result)
+            self.assertTrue(
+                (datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo").is_file()
+            )
+
+    def test_install_dry_run_reports_missing_pack_without_building(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, packs = self.prepare_without_pack(root)
+            layout = (root / "blender", datafiles, "5.2.0")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                result = install_pack(root / "Blender.app", None, True, packs, activate=False)
+            output, manifest = pack_paths("5.2.0", packs)
+            self.assertFalse(output.exists())
+            self.assertFalse(manifest.exists())
+            self.assertIn("将先从本地 Blender 自动生成", result)
+
+    def test_install_does_not_overwrite_partial_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, packs = self.prepare_without_pack(root)
+            _output, manifest = pack_paths("5.2.0", packs)
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("{}\n", encoding="utf-8")
+            layout = (root / "blender", datafiles, "5.2.0")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                with self.assertRaisesRegex(BilingualError, "找不到 5.2.0"):
+                    install_pack(root / "Blender.app", None, False, packs, activate=False)
+
     def test_install_is_idempotent_and_uninstall_is_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

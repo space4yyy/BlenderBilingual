@@ -524,8 +524,30 @@ def install_pack(
     executable, datafiles, detected_version = blender_layout(blender)
     if version is not None and parse_version(version)[0] != detected_version:
         raise BilingualError(f"目标 Blender 是 {detected_version}，不是 {version}")
-    verify_pack(detected_version, packs_root)
-    source_mo, _manifest = pack_paths(detected_version, packs_root)
+    source_mo, manifest_path = pack_paths(detected_version, packs_root)
+    pack_complete = source_mo.is_file() and manifest_path.is_file()
+    pack_partially_present = source_mo.exists() or manifest_path.exists()
+    auto_generated = False
+    will_auto_generate = False
+    if pack_complete or pack_partially_present:
+        verify_pack(detected_version, packs_root)
+    else:
+        official_mo = datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
+        if not official_mo.is_file():
+            raise BilingualError(f"找不到本地 Blender 的官方简中 MO：{official_mo}")
+        if dry_run:
+            will_auto_generate = True
+        else:
+            _version, resource_version = parse_version(detected_version)
+            build_from_source(
+                official_mo,
+                detected_version,
+                resource_version,
+                {"type": "local_blender", "blender": str(blender.expanduser().resolve())},
+                packs_root,
+            )
+            verify_pack(detected_version, packs_root)
+            auto_generated = True
     languages = datafiles / "locale" / "languages"
     destination = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
     if not languages.is_file():
@@ -545,7 +567,8 @@ def install_pack(
     updated_text = clean_text.rstrip() + "\n" + block
     if dry_run:
         activation = "并设为当前用户语言" if activate else "但不修改当前用户语言"
-        return f"将安装 {detected_version} 到 {destination}，语言 ID {free_id}，{activation}"
+        generation = "将先从本地 Blender 自动生成对应语言包；" if will_auto_generate else ""
+        return f"{generation}将安装 {detected_version} 到 {destination}，语言 ID {free_id}，{activation}"
     backup = languages.with_name("languages.zh_HANS_Bilingual.backup")
     destination_existed = destination.exists()
     previous_destination = destination.read_bytes() if destination_existed else None
@@ -578,7 +601,8 @@ def install_pack(
             raise
         raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
     activation = "，已设为当前用户语言" if activate else ""
-    return f"已安装 Blender {detected_version} 双语语言，语言 ID {free_id}{activation}"
+    generation = f"已自动生成 Blender {detected_version} 双语语言包；" if auto_generated else ""
+    return f"{generation}已安装 Blender {detected_version} 双语语言，语言 ID {free_id}{activation}"
 
 
 def uninstall_pack(blender: Path, dry_run: bool, reset_language: bool = True) -> str:
