@@ -305,6 +305,26 @@ class InstallTests(unittest.TestCase):
                 self.assertIn("Occupied:test", languages)
                 self.assertFalse((datafiles / "locale" / LANGUAGE_CODE).exists())
 
+    def test_install_can_keep_backup_outside_blender_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, packs = self.prepare(root)
+            external_backup = root / "user-data" / "5.1.2" / "languages"
+            layout = (root / "blender", datafiles, "5.1.2")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                install_pack(
+                    root / "Blender.app",
+                    None,
+                    False,
+                    packs,
+                    activate=False,
+                    backup_path=external_backup,
+                )
+            self.assertTrue(external_backup.is_file())
+            self.assertFalse(
+                (datafiles / "locale" / "languages.zh_HANS_Bilingual.backup").exists()
+            )
+
     def test_install_rejects_unmanaged_same_language(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

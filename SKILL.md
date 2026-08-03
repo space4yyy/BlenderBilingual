@@ -97,7 +97,7 @@ Use `blender_bilingual_gui.py` as the single GUI entry point. It must discover l
 
 Build native artifacts with `python packaging/build_app.py`. PyInstaller is not a cross-compiler: build the macOS `.app` on macOS and the Windows single-file EXE on Windows. Keep Windows `--uac-admin`, because standard Blender installations are normally protected. The restore action must use the normal scoped uninstall path and reset the language to official Simplified Chinese.
 
-For a protected macOS Blender under `/Applications`, elevate only the installation-directory mutation through the GUI's administrator helper. Always run `set_blender_language` in the original GUI process so preferences belong to the logged-in user, never root. If preference activation fails after an elevated install, invoke the elevated uninstall helper to roll back the managed files.
+On macOS, declare `NSAppBundlesUsageDescription` in the final signed bundle so App Management can authorize changes to Blender.app. Keep the original `languages` backup under the logged-in user's Application Support directory, not inside Blender.app. Prefer direct writes when Unix permissions permit so TCC attributes the request to the GUI; use the administrator helper only when the target is not writable. Always run `set_blender_language` in the original GUI process so preferences belong to the logged-in user, never root. If preference activation fails after an elevated install, invoke the elevated uninstall helper to roll back the managed files.
 
 ## Uninstall on macOS or Windows
 

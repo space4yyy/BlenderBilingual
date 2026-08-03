@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,15 +33,34 @@ from scripts.bilingual import (
 APP_NAME = "Blender 双语工具"
 
 
-def requires_macos_admin(blender: Path, datafiles: Path) -> bool:
+def requires_macos_admin(_blender: Path, datafiles: Path) -> bool:
     if sys.platform != "darwin":
         return False
-    resolved = blender.expanduser().resolve()
-    protected = resolved == Path("/Applications") or Path("/Applications") in resolved.parents
     locale_root = datafiles / "locale"
     languages = locale_root / "languages"
     languages_target = languages if languages.exists() else locale_root
-    return protected or not os.access(locale_root, os.W_OK) or not os.access(languages_target, os.W_OK)
+    return not os.access(locale_root, os.W_OK) or not os.access(languages_target, os.W_OK)
+
+
+def prepare_macos_backup(datafiles: Path, version: str) -> Path | None:
+    if sys.platform != "darwin":
+        return None
+    destination = (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Blender Bilingual"
+        / "backups"
+        / version
+        / "languages"
+    )
+    if not destination.exists():
+        locale_root = datafiles / "locale"
+        legacy = locale_root / "languages.zh_HANS_Bilingual.backup"
+        source = legacy if legacy.is_file() else locale_root / "languages"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    return destination
 
 
 def application_command() -> list[str]:
@@ -97,6 +117,7 @@ def privileged_main(argv: list[str]) -> int:
     parser.add_argument("--version")
     parser.add_argument("--packs-root", type=Path)
     parser.add_argument("--order", default=ORDER_ZH_EN)
+    parser.add_argument("--backup-path", type=Path)
     parser.add_argument("--result-file", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -110,6 +131,7 @@ def privileged_main(argv: list[str]) -> int:
                 args.packs_root,
                 activate=False,
                 order=args.order,
+                backup_path=args.backup_path,
             )
         else:
             result = uninstall_pack(args.blender, False, reset_language=False)
@@ -129,6 +151,7 @@ def inject(blender: Path, order: str) -> str:
     if not official_mo.is_file():
         raise BilingualError(f"找不到 Blender 自带的官方简中语言包：{official_mo}")
     _version, resource_version = parse_version(version)
+    backup_path = prepare_macos_backup(datafiles, version)
     with tempfile.TemporaryDirectory(prefix="blender-bilingual-gui-") as temporary:
         packs_root = Path(temporary) / "packs"
         build_from_source(
@@ -141,20 +164,21 @@ def inject(blender: Path, order: str) -> str:
         )
         verify_pack(version, packs_root, order)
         if requires_macos_admin(blender, datafiles):
-            result = run_macos_privileged(
-                [
-                    "--privileged-action",
-                    "install",
-                    "--blender",
-                    str(blender),
-                    "--version",
-                    version,
-                    "--packs-root",
-                    str(packs_root),
-                    "--order",
-                    order,
-                ]
-            )
+            privileged_arguments = [
+                "--privileged-action",
+                "install",
+                "--blender",
+                str(blender),
+                "--version",
+                version,
+                "--packs-root",
+                str(packs_root),
+                "--order",
+                order,
+            ]
+            if backup_path is not None:
+                privileged_arguments.extend(["--backup-path", str(backup_path)])
+            result = run_macos_privileged(privileged_arguments)
             try:
                 set_blender_language(executable, LANGUAGE_CODE)
             except Exception:
@@ -166,7 +190,15 @@ def inject(blender: Path, order: str) -> str:
                     pass
                 raise
             return f"{result}，已设为当前用户语言"
-        return install_pack(blender, version, False, packs_root, activate=True, order=order)
+        return install_pack(
+            blender,
+            version,
+            False,
+            packs_root,
+            activate=True,
+            order=order,
+            backup_path=backup_path,
+        )
 
 
 def restore(blender: Path) -> str:
@@ -350,7 +382,15 @@ def main(argv: list[str] | None = None) -> int:
             self._set_idle()
             self.status.set(details)
             if not quiet:
-                hint = "\n\n若安装在受保护目录，请以管理员身份运行本工具。" if os.name == "nt" else ""
+                if sys.platform == "darwin" and "Operation not permitted" in details:
+                    hint = (
+                        "\n\nmacOS 已阻止本工具修改 Blender。请打开“系统设置 → 隐私与安全性 → "
+                        "应用管理”，允许 BlenderBilingual，然后重试。"
+                    )
+                elif os.name == "nt":
+                    hint = "\n\n若安装在受保护目录，请以管理员身份运行本工具。"
+                else:
+                    hint = ""
                 messagebox.showerror(APP_NAME, details + hint)
 
         def _succeeded(self, title: str, details: str) -> None:

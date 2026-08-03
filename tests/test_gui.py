@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from blender_bilingual_gui import inject, privileged_main, restore
+from blender_bilingual_gui import inject, prepare_macos_backup, privileged_main, restore
 from scripts.bilingual import BilingualError, LANGUAGE_CODE, MOCatalog, MOEntry, ORDER_EN_ZH
 
 
@@ -32,6 +32,7 @@ class GUIBackendTests(unittest.TestCase):
 
             with (
                 mock.patch("blender_bilingual_gui.blender_layout", return_value=layout),
+                mock.patch("blender_bilingual_gui.prepare_macos_backup", return_value=None),
                 mock.patch("blender_bilingual_gui.install_pack", side_effect=inspect_install),
             ):
                 self.assertEqual("ok", inject(root, ORDER_EN_ZH))
@@ -49,6 +50,7 @@ class GUIBackendTests(unittest.TestCase):
             layout = (executable, datafiles, "5.2.0")
             with (
                 mock.patch("blender_bilingual_gui.blender_layout", return_value=layout),
+                mock.patch("blender_bilingual_gui.prepare_macos_backup", return_value=None),
                 mock.patch("blender_bilingual_gui.requires_macos_admin", return_value=True),
                 mock.patch(
                     "blender_bilingual_gui.run_macos_privileged", return_value="已安装文件"
@@ -100,6 +102,7 @@ class GUIBackendTests(unittest.TestCase):
             layout = (root / "Blender", datafiles, "5.2.0")
             with (
                 mock.patch("blender_bilingual_gui.blender_layout", return_value=layout),
+                mock.patch("blender_bilingual_gui.prepare_macos_backup", return_value=None),
                 mock.patch("blender_bilingual_gui.requires_macos_admin", return_value=True),
                 mock.patch(
                     "blender_bilingual_gui.run_macos_privileged",
@@ -114,6 +117,22 @@ class GUIBackendTests(unittest.TestCase):
                     inject(root, ORDER_EN_ZH)
             self.assertEqual(2, privileged.call_count)
             self.assertEqual("uninstall", privileged.call_args_list[1].args[0][1])
+
+    def test_macos_backup_migrates_legacy_backup_outside_app(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles = root / "Blender.app" / "Contents" / "Resources" / "5.2" / "datafiles"
+            locale = datafiles / "locale"
+            locale.mkdir(parents=True)
+            (locale / "languages").write_text("current", encoding="utf-8")
+            (locale / "languages.zh_HANS_Bilingual.backup").write_text(
+                "official", encoding="utf-8"
+            )
+            with mock.patch("blender_bilingual_gui.Path.home", return_value=root / "home"):
+                backup = prepare_macos_backup(datafiles, "5.2.0")
+            self.assertIsNotNone(backup)
+            self.assertEqual("official", backup.read_text(encoding="utf-8"))
+            self.assertNotIn("Blender.app", str(backup))
 
     def test_privileged_helper_never_activates_root_user_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

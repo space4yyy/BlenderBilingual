@@ -17,7 +17,7 @@
 
 点“还原官方简中”会先把用户语言切回 `zh_HANS`，再移除本工具管理的菜单项和语言目录。工具不会修改官方简中 MO。
 
-> macOS 向 `/Applications` 中的 Blender 注入或还原文件时，会弹出系统管理员授权；Blender 用户偏好仍由当前登录账户保存，不会写入 root 配置。Windows 标准安装通常位于受保护目录，因此打包的 EXE 会自动请求管理员权限。取消授权时工具不会继续修改安装目录。
+> macOS 首次修改 Blender 时可能请求“应用管理”权限；请允许 BlenderBilingual 更新其他 App。若此前拒绝过，请打开“系统设置 → 隐私与安全性 → 应用管理”重新允许。只有 Blender 目录的 Unix 权限确实不可写时，工具才会额外请求管理员密码。Blender 用户偏好始终由当前登录账户保存，不会写入 root 配置。Windows 标准安装通常位于受保护目录，因此打包的 EXE 会自动请求管理员权限。
 
 脚本会读取本地 Blender 的精确版本。若 `packs/` 中没有对应版本，会自动使用该 Blender 自带的官方简中 MO 生成并校验双语包，然后继续安装。
 
@@ -213,6 +213,8 @@ python packaging/build_app.py
 产物位于 `dist/`：macOS 为 `BlenderBilingual.app`，Windows 为单文件 `BlenderBilingual.exe`。推送到 `main` 或在 GitHub Actions 页面手动运行 `Build desktop apps`，会在该次 Actions 运行中上传两个 ZIP；推送 `v*` 标签时，还会自动创建对应 GitHub Release，并把 macOS、Windows ZIP 附加为 Release 下载文件。
 
 默认构建没有开发者证书与公证。首次打开下载的 macOS 应用时可在 Finder 中右键选择“打开”；Windows 可能显示 SmartScreen 提示。正式公开分发时建议在 CI 中另行配置 Apple Developer ID、公证和 Windows 代码签名证书。
+
+macOS 构建会声明 App Management 用途，以便系统允许工具修改用户选择的 Blender.app。原始 `languages` 安全备份保存在 `~/Library/Application Support/Blender Bilingual/backups/<版本>/`，不会在 Blender.app 内额外创建备份文件。Apple 对 App Management 的说明见[“更改 Mac 上的隐私与安全性设置”](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac)。
 
 ## 许可证与来源
 

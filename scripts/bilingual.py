@@ -625,6 +625,7 @@ def install_pack(
     packs_root: Path = PACKS_ROOT,
     activate: bool = True,
     order: str = ORDER_ZH_EN,
+    backup_path: Path | None = None,
 ) -> str:
     order = normalize_order(order)
     executable, datafiles, detected_version = blender_layout(blender)
@@ -676,13 +677,18 @@ def install_pack(
         activation = "并设为当前用户语言" if activate else "但不修改当前用户语言"
         generation = "将先从本地 Blender 自动生成对应语言包；" if will_auto_generate else ""
         return f"{generation}将安装 {detected_version} 到 {destination}，语言 ID {free_id}，{activation}"
-    backup = languages.with_name("languages.zh_HANS_Bilingual.backup")
+    backup = (
+        backup_path.expanduser().resolve()
+        if backup_path is not None
+        else languages.with_name("languages.zh_HANS_Bilingual.backup")
+    )
     destination_existed = destination.exists()
     previous_destination = destination.read_bytes() if destination_existed else None
     wrote_destination = False
     wrote_languages = False
     try:
         if not backup.exists():
+            backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(languages, backup)
         atomic_write(destination, source_mo.read_bytes())
         wrote_destination = True
