@@ -16,8 +16,11 @@ from scripts.bilingual import (
     MANAGED_END,
     MOCatalog,
     MOEntry,
+    ORDER_EN_ZH,
+    ORDER_ZH_EN,
     bilingual_translation,
     build_from_source,
+    discover_blender_installations,
     expected_checksum,
     extract_official_mo,
     has_dynamic_placeholder,
@@ -86,6 +89,15 @@ class MOTests(unittest.TestCase):
         self.assertEqual(1, stats["plurals"])
         self.assertEqual(2, stats["dynamic"])
 
+    def test_english_chinese_order(self) -> None:
+        transformed, stats = transform_catalog(fixture_catalog(), ORDER_EN_ZH)
+        values = {entry.original: entry.translation for entry in transformed.entries}
+        self.assertEqual("File 文件", values["File"])
+        self.assertEqual("Play 播放", values["Action\x04Play"])
+        self.assertEqual("Fallback", values["Fallback"])
+        self.assertEqual("%d 项\0%d 项", values["%d item\0%d items"])
+        self.assertEqual(2, stats["dynamic"])
+
     def test_placeholder_detection_and_escapes(self) -> None:
         dynamic = ("%s", "%03d", "%(name)s", "%2$.*3$f", "%zu", "{}", "{name}", "{0:.2f}")
         static = ("100%%", "{{name}}", "plain text", "百分比 100%")
@@ -131,6 +143,26 @@ class BuildTests(unittest.TestCase):
             self.assertEqual("5.1.2", manifest["blender_version"])
             self.assertEqual(7, manifest["output"]["messages"])
 
+    def test_build_and_verify_english_chinese_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "official.mo"
+            source.write_bytes(fixture_catalog().to_bytes())
+            packs = root / "packs"
+            build_from_source(
+                source,
+                "5.2.0",
+                "5.2",
+                {"type": "provided_mo"},
+                packs,
+                ORDER_EN_ZH,
+            )
+            manifest = verify_pack("5.2.0", packs, ORDER_EN_ZH)
+            self.assertEqual(ORDER_EN_ZH, manifest["order"])
+            self.assertEqual("English 中文", manifest["display_format"])
+            with self.assertRaisesRegex(BilingualError, "语言包顺序"):
+                verify_pack("5.2.0", packs, ORDER_ZH_EN)
+
     def test_verify_detects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -143,6 +175,15 @@ class BuildTests(unittest.TestCase):
             output.write_bytes(output.read_bytes() + b"x")
             with self.assertRaises(BilingualError):
                 verify_pack("4.4.3", packs)
+
+    def test_discovers_blender_from_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "blender"
+            executable.write_bytes(b"")
+            with mock.patch("scripts.bilingual.shutil.which", return_value=str(executable)):
+                self.assertEqual(
+                    [executable.resolve()], discover_blender_installations(platform_name="linux")
+                )
 
 
 class ArchiveTests(unittest.TestCase):
@@ -274,6 +315,19 @@ class InstallTests(unittest.TestCase):
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
                 with self.assertRaises(BilingualError):
                     install_pack(root / "Blender.app", None, False, packs, activate=False)
+
+    def test_uninstall_preserves_unmanaged_language_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, _packs = self.prepare(root)
+            unmanaged = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
+            unmanaged.parent.mkdir(parents=True)
+            unmanaged.write_bytes(b"unmanaged")
+            layout = (root / "blender", datafiles, "5.1.2")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                result = uninstall_pack(root / "Blender.app", False, reset_language=False)
+            self.assertTrue(unmanaged.is_file())
+            self.assertIn("未发现本工具管理", result)
 
     def test_language_activation_uses_blender_and_saves_preferences(self) -> None:
         completed = mock.Mock(returncode=0, stdout="", stderr="")

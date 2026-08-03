@@ -10,13 +10,13 @@ Operate from this repository root. Reuse `scripts/bilingual.py`; do not reimplem
 ## Preserve these rules
 
 - Take English only from each official Simplified Chinese MO entry's `msgid`. Never translate or rewrite it.
-- Emit ordinary messages as `中文 English`, separated by one ASCII space and without parentheses.
+- Support both `zh-en` (`中文 English`) and `en-zh` (`English 中文`), separated by one ASCII space and without parentheses. The repository pack default remains `zh-en`.
 - Keep the official Chinese translation unchanged when either side contains runtime placeholders such as `%s`, `%d`, `%(name)s`, `{}`, or `{name}`.
 - Work directly with MO catalogs. Do not create or retain PO files.
 - Use exact patch versions such as `4.4.3`; never silently resolve `4.4` to a changing latest release.
 - Store only the generated MO and `manifest.json` under `packs/<version>/`.
 - Use `zh_HANS@bilingual` for the independent bilingual language and retain Blender's official `zh_HANS` unchanged. Do not use the non-standard `zh_HANS_bilingual` form.
-- Increment `RULE_VERSION` whenever output semantics or display formatting changes, then rebuild every affected pack.
+- Assign a new entry in `ORDER_RULE_VERSIONS` whenever a new output semantic or display format is introduced. Do not invalidate an unchanged order's existing packs.
 
 ## Build
 
@@ -25,6 +25,8 @@ Prefer an installed Blender when its exact version is the target:
 ```bash
 python3 scripts/bilingual.py build --blender /Applications/Blender.app
 ```
+
+Pass `--order en-zh` when English must appear first. Omit it for the repository default `zh-en`.
 
 For an uninstalled version, let the tool download and verify the official Linux release archive:
 
@@ -88,6 +90,12 @@ After installation, verify the installed MO checksum matches the pack. Verify pe
 ```
 
 Run this restart check with normal macOS system access. A sandboxed Blender process may crash during Metal GPU detection even with `--factory-startup`; inspect the crash stack before attributing that failure to the language pack. Acceptance requires `ACTIVE_LANGUAGE=zh_HANS@bilingual` outside the restricted sandbox.
+
+## Desktop GUI
+
+Use `blender_bilingual_gui.py` as the single GUI entry point. It must discover local Blender installations on launch while retaining manual path selection. For each injection, build the selected order from that exact installation's official `zh_HANS` MO in a temporary directory, verify it, install it, activate it, and remove the temporary directory. Never bundle repository `packs/` into the desktop executable.
+
+Build native artifacts with `python packaging/build_app.py`. PyInstaller is not a cross-compiler: build the macOS `.app` on macOS and the Windows single-file EXE on Windows. Keep Windows `--uac-admin`, because standard Blender installations are normally protected. The restore action must use the normal scoped uninstall path and reset the language to official Simplified Chinese.
 
 ## Uninstall on macOS or Windows
 

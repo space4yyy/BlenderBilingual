@@ -27,7 +27,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKS_ROOT = PROJECT_ROOT / "packs"
 LANGUAGE_CODE = "zh_HANS@bilingual"
 LANGUAGE_LABEL = "Chinese (Simplified, Bilingual) - 简中 English"
-RULE_VERSION = 3
+ORDER_ZH_EN = "zh-en"
+ORDER_EN_ZH = "en-zh"
+ORDERS = (ORDER_ZH_EN, ORDER_EN_ZH)
+ORDER_RULE_VERSIONS = {ORDER_ZH_EN: 3, ORDER_EN_ZH: 4}
+RULE_VERSION = ORDER_RULE_VERSIONS[ORDER_ZH_EN]
 MANAGED_BEGIN = "# BEGIN zh_HANS_Bilingual managed"
 MANAGED_END = "# END zh_HANS_Bilingual managed"
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -193,8 +197,17 @@ def has_dynamic_placeholder(value: str) -> bool:
     return bool(PRINTF_RE.search(value)) or has_brace_placeholder(value)
 
 
-def bilingual_translation(original: str, translation: str) -> tuple[str, str]:
+def normalize_order(order: str) -> str:
+    if order not in ORDERS:
+        raise BilingualError(f"不支持的双语顺序：{order}")
+    return order
+
+
+def bilingual_translation(
+    original: str, translation: str, order: str = ORDER_ZH_EN
+) -> tuple[str, str]:
     """Return transformed translation and the applied rule name."""
+    order = normalize_order(order)
     if original == "":
         return translation, "header"
     message_ids = strip_context(original).split("\0")
@@ -209,16 +222,21 @@ def bilingual_translation(original: str, translation: str) -> tuple[str, str]:
             transformed.append(english)
         elif translated == english:
             transformed.append(translated)
+        elif order == ORDER_EN_ZH:
+            transformed.append(f"{english} {translated}")
         else:
             transformed.append(f"{translated} {english}")
     return "\0".join(transformed), "bilingual"
 
 
-def transform_catalog(source: MOCatalog) -> tuple[MOCatalog, dict[str, int]]:
+def transform_catalog(
+    source: MOCatalog, order: str = ORDER_ZH_EN
+) -> tuple[MOCatalog, dict[str, int]]:
+    order = normalize_order(order)
     stats = {"messages": 0, "contexts": 0, "plurals": 0, "bilingual": 0, "dynamic": 0, "header": 0}
     transformed: list[MOEntry] = []
     for entry in source.entries:
-        translation, rule = bilingual_translation(entry.original, entry.translation)
+        translation, rule = bilingual_translation(entry.original, entry.translation, order)
         transformed.append(MOEntry(entry.original, translation))
         stats[rule] += 1
         if entry.original:
@@ -230,18 +248,20 @@ def transform_catalog(source: MOCatalog) -> tuple[MOCatalog, dict[str, int]]:
     return MOCatalog(tuple(transformed)), stats
 
 
-def output_entry_is_dynamic(entry: MOEntry) -> bool:
+def output_entry_is_dynamic(entry: MOEntry, order: str = ORDER_ZH_EN) -> bool:
     """Re-evaluate the dynamic rule after English has already been appended."""
+    order = normalize_order(order)
     message_ids = strip_context(entry.original).split("\0")
     if any(has_dynamic_placeholder(value) for value in message_ids):
         return True
     for index, translated in enumerate(entry.translation.split("\0")):
         english = message_ids[min(index, len(message_ids) - 1)]
-        suffix = f" {english}"
         if translated == english:
             original_translation = ""
-        elif translated.endswith(suffix):
-            original_translation = translated[: -len(suffix)]
+        elif order == ORDER_ZH_EN and translated.endswith(f" {english}"):
+            original_translation = translated[: -(len(english) + 1)]
+        elif order == ORDER_EN_ZH and translated.startswith(f"{english} "):
+            original_translation = translated[len(english) + 1 :]
         else:
             original_translation = translated
         if has_dynamic_placeholder(original_translation):
@@ -285,6 +305,64 @@ def blender_layout(blender: Path) -> tuple[Path, Path, str]:
     if not datafiles.is_dir():
         raise BilingualError(f"找不到 Blender 数据目录：{datafiles}")
     return executable, datafiles, version
+
+
+def discover_blender_installations(platform_name: str | None = None) -> list[Path]:
+    """Return likely local Blender app roots or executables without launching them."""
+    platform_name = platform_name or sys.platform
+    candidates: list[Path] = []
+    if platform_name == "darwin":
+        for root in (Path("/Applications"), Path.home() / "Applications"):
+            if root.is_dir():
+                candidates.extend(root.glob("Blender*.app"))
+    elif platform_name == "win32":
+        for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+            value = os.environ.get(variable)
+            if not value:
+                continue
+            root = Path(value)
+            candidates.extend(root.glob("Blender Foundation/Blender*/blender.exe"))
+            candidates.extend(root.glob("Programs/Blender Foundation/Blender*/blender.exe"))
+        try:
+            import winreg
+
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(
+                        hive, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\blender.exe"
+                    ) as key:
+                        candidates.append(Path(winreg.QueryValue(key, None)))
+                except OSError:
+                    pass
+        except ImportError:
+            pass
+
+    executable = shutil.which("blender") or shutil.which("blender.exe")
+    if executable:
+        candidates.append(Path(executable))
+
+    discovered: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate = candidate.expanduser()
+        if candidate.suffix == ".app":
+            exists = (candidate / "Contents" / "MacOS" / "Blender").is_file()
+        elif candidate.is_file():
+            exists = True
+        else:
+            exists = (candidate / ("blender.exe" if platform_name == "win32" else "blender")).is_file()
+        if not exists:
+            continue
+        resolved = candidate.resolve()
+        key = os.path.normcase(str(resolved))
+        if key not in seen:
+            seen.add(key)
+            discovered.append(resolved)
+    return sorted(
+        discovered,
+        key=lambda path: (path.suffix.casefold() == ".app", path.name.casefold()),
+        reverse=True,
+    )
 
 
 def source_mo_from_blender(blender: Path) -> tuple[Path, str, str, dict[str, str]]:
@@ -378,13 +456,19 @@ def pack_paths(version: str, packs_root: Path = PACKS_ROOT) -> tuple[Path, Path]
 
 
 def build_pack(
-    *, version: str | None, blender: Path | None, source_mo: Path | None, packs_root: Path = PACKS_ROOT
+    *,
+    version: str | None,
+    blender: Path | None,
+    source_mo: Path | None,
+    packs_root: Path = PACKS_ROOT,
+    order: str = ORDER_ZH_EN,
 ) -> tuple[Path, Path]:
+    order = normalize_order(order)
     if blender is not None:
         if version is not None or source_mo is not None:
             raise BilingualError("--blender 不能与 --version 或 --source-mo 同时使用")
         source, version, resource_version, source_info = source_mo_from_blender(blender)
-        return build_from_source(source, version, resource_version, source_info, packs_root)
+        return build_from_source(source, version, resource_version, source_info, packs_root, order)
 
     if version is None:
         raise BilingualError("请使用 --blender，或指定精确的 --version")
@@ -393,19 +477,27 @@ def build_pack(
         source = source_mo.expanduser().resolve()
         if not source.is_file():
             raise BilingualError(f"指定的 MO 不存在：{source}")
-        return build_from_source(source, version, resource_version, {"type": "provided_mo"}, packs_root)
+        return build_from_source(
+            source, version, resource_version, {"type": "provided_mo"}, packs_root, order
+        )
 
     with tempfile.TemporaryDirectory(prefix="blender-bilingual-") as temporary:
         source, source_info = fetch_source_mo(version, Path(temporary))
-        return build_from_source(source, version, resource_version, source_info, packs_root)
+        return build_from_source(source, version, resource_version, source_info, packs_root, order)
 
 
 def build_from_source(
-    source: Path, version: str, resource_version: str, source_info: dict[str, str], packs_root: Path
+    source: Path,
+    version: str,
+    resource_version: str,
+    source_info: dict[str, str],
+    packs_root: Path,
+    order: str = ORDER_ZH_EN,
 ) -> tuple[Path, Path]:
+    order = normalize_order(order)
     source_bytes = source.read_bytes()
     source_catalog = MOCatalog.read(source_bytes)
-    output_catalog, stats = transform_catalog(source_catalog)
+    output_catalog, stats = transform_catalog(source_catalog, order)
     output_bytes = output_catalog.to_bytes()
     roundtrip = MOCatalog.read(output_bytes)
     if catalog_key_digest(source_catalog) != catalog_key_digest(roundtrip):
@@ -415,8 +507,9 @@ def build_from_source(
     manifest = {
         "schema_version": 1,
         "language": LANGUAGE_CODE,
-        "display_format": "中文 English",
-        "rule_version": RULE_VERSION,
+        "order": order,
+        "display_format": "中文 English" if order == ORDER_ZH_EN else "English 中文",
+        "rule_version": ORDER_RULE_VERSIONS[order],
         "blender_version": version,
         "resource_version": resource_version,
         "source": {**source_info, "mo_sha256": sha256_bytes(source_bytes)},
@@ -432,7 +525,10 @@ def build_from_source(
     return output, manifest_path
 
 
-def verify_pack(version: str, packs_root: Path = PACKS_ROOT) -> dict[str, object]:
+def verify_pack(
+    version: str, packs_root: Path = PACKS_ROOT, order: str = ORDER_ZH_EN
+) -> dict[str, object]:
+    order = normalize_order(order)
     version, resource_version = parse_version(version)
     output, manifest_path = pack_paths(version, packs_root)
     if not output.is_file() or not manifest_path.is_file():
@@ -443,7 +539,15 @@ def verify_pack(version: str, packs_root: Path = PACKS_ROOT) -> dict[str, object
         raise BilingualError(f"manifest 无效：{exc}") from exc
     if manifest.get("blender_version") != version or manifest.get("resource_version") != resource_version:
         raise BilingualError("manifest 中的 Blender 版本不匹配")
-    if manifest.get("language") != LANGUAGE_CODE or manifest.get("rule_version") != RULE_VERSION:
+    manifest_order = manifest.get("order", ORDER_ZH_EN)
+    if manifest_order != order:
+        raise BilingualError(
+            f"语言包顺序为 {manifest_order}，当前需要 {order}，请按所需顺序重新生成"
+        )
+    if (
+        manifest.get("language") != LANGUAGE_CODE
+        or manifest.get("rule_version") != ORDER_RULE_VERSIONS[order]
+    ):
         raise BilingualError("manifest 的语言代码或生成规则版本不受支持")
     catalog = MOCatalog.read(output)
     actual_sha = sha256_file(output)
@@ -455,7 +559,7 @@ def verify_pack(version: str, packs_root: Path = PACKS_ROOT) -> dict[str, object
     messages = sum(entry.original != "" for entry in catalog.entries)
     contexts = sum("\x04" in entry.original for entry in catalog.entries if entry.original)
     plurals = sum("\0" in strip_context(entry.original) for entry in catalog.entries if entry.original)
-    dynamic = sum(output_entry_is_dynamic(entry) for entry in catalog.entries if entry.original)
+    dynamic = sum(output_entry_is_dynamic(entry, order) for entry in catalog.entries if entry.original)
     for key, value in (
         ("messages", messages),
         ("contexts", contexts),
@@ -520,7 +624,9 @@ def install_pack(
     dry_run: bool,
     packs_root: Path = PACKS_ROOT,
     activate: bool = True,
+    order: str = ORDER_ZH_EN,
 ) -> str:
+    order = normalize_order(order)
     executable, datafiles, detected_version = blender_layout(blender)
     if version is not None and parse_version(version)[0] != detected_version:
         raise BilingualError(f"目标 Blender 是 {detected_version}，不是 {version}")
@@ -530,7 +636,7 @@ def install_pack(
     auto_generated = False
     will_auto_generate = False
     if pack_complete or pack_partially_present:
-        verify_pack(detected_version, packs_root)
+        verify_pack(detected_version, packs_root, order)
     else:
         official_mo = datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
         if not official_mo.is_file():
@@ -545,8 +651,9 @@ def install_pack(
                 resource_version,
                 {"type": "local_blender", "blender": str(blender.expanduser().resolve())},
                 packs_root,
+                order,
             )
-            verify_pack(detected_version, packs_root)
+            verify_pack(detected_version, packs_root, order)
             auto_generated = True
     languages = datafiles / "locale" / "languages"
     destination = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
@@ -619,11 +726,14 @@ def uninstall_pack(blender: Path, dry_run: bool, reset_language: bool = True) ->
             set_blender_language(executable, "zh_HANS")
         if had_block:
             atomic_write(languages, updated_text.encode("utf-8"))
-        if destination_root.exists():
+        if had_block and destination_root.exists():
             shutil.rmtree(destination_root)
     except OSError as exc:
         raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
-    return f"已卸载 Blender {detected_version} 双语语言"
+    if had_block:
+        return f"已卸载 Blender {detected_version} 双语语言"
+    preference = "已切回官方简中" if reset_language else "未修改当前用户语言"
+    return f"Blender {detected_version} 未发现本工具管理的双语语言；{preference}"
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -634,9 +744,11 @@ def create_parser() -> argparse.ArgumentParser:
     build.add_argument("--blender", type=Path, help="本地 Blender.app、安装目录或可执行文件")
     build.add_argument("--version", help="精确 Blender 版本，例如 4.4.3")
     build.add_argument("--source-mo", type=Path, help="已有的官方简中 blender.mo")
+    build.add_argument("--order", choices=ORDERS, default=ORDER_ZH_EN, help="双语显示顺序")
 
     verify = subparsers.add_parser("verify", help="校验已生成语言包")
     verify.add_argument("--version", required=True)
+    verify.add_argument("--order", choices=ORDERS, default=ORDER_ZH_EN, help="双语显示顺序")
 
     for name in ("install", "uninstall"):
         command = subparsers.add_parser(name, help=f"{name} Blender 双语语言")
@@ -650,6 +762,7 @@ def create_parser() -> argparse.ArgumentParser:
         command.add_argument("--dry-run", action="store_true")
         if name == "install":
             command.add_argument("--version", help="可选的目标版本二次校验")
+            command.add_argument("--order", choices=ORDERS, default=ORDER_ZH_EN, help="双语显示顺序")
             command.add_argument("--no-activate", action="store_true", help="安装后不修改当前用户语言")
         else:
             command.add_argument("--no-reset-language", action="store_true", help="卸载前不切回官方简中")
@@ -660,17 +773,30 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = create_parser().parse_args(argv)
     try:
         if args.command == "build":
-            output, manifest = build_pack(version=args.version, blender=args.blender, source_mo=args.source_mo)
+            output, manifest = build_pack(
+                version=args.version,
+                blender=args.blender,
+                source_mo=args.source_mo,
+                order=args.order,
+            )
             print(f"已生成：{output}")
             print(f"元数据：{manifest}")
         elif args.command == "verify":
-            manifest = verify_pack(args.version)
+            manifest = verify_pack(args.version, order=args.order)
             print(
                 f"校验通过：Blender {args.version}，"
                 f"{manifest['output']['messages']} 条消息，{manifest['output']['bilingual']} 条双语"
             )
         elif args.command == "install":
-            print(install_pack(args.blender, args.version, args.dry_run, activate=not args.no_activate))
+            print(
+                install_pack(
+                    args.blender,
+                    args.version,
+                    args.dry_run,
+                    activate=not args.no_activate,
+                    order=args.order,
+                )
+            )
         elif args.command == "uninstall":
             print(uninstall_pack(args.blender, args.dry_run, reset_language=not args.no_reset_language))
         return 0
