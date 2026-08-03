@@ -128,7 +128,10 @@ class GUIBackendTests(unittest.TestCase):
             (locale / "languages.zh_HANS_Bilingual.backup").write_text(
                 "official", encoding="utf-8"
             )
-            with mock.patch("blender_bilingual_gui.Path.home", return_value=root / "home"):
+            with (
+                mock.patch("blender_bilingual_gui.sys.platform", "darwin"),
+                mock.patch("blender_bilingual_gui.Path.home", return_value=root / "home"),
+            ):
                 backup = prepare_macos_backup(datafiles, "5.2.0")
             self.assertIsNotNone(backup)
             self.assertEqual("official", backup.read_text(encoding="utf-8"))
