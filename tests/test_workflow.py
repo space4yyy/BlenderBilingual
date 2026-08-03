@@ -15,6 +15,12 @@ class WorkflowTests(unittest.TestCase):
         push_section = workflow.split("  push:\n", 1)[1].split("\njobs:\n", 1)[0]
         self.assertIn("    branches:\n      - main\n", push_section)
 
+    def test_python_cache_uses_build_requirements(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build-gui.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("          cache-dependency-path: requirements-build.txt\n", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
