@@ -21,6 +21,16 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertIn("          cache-dependency-path: requirements-build.txt\n", workflow)
 
+    def test_tag_build_publishes_both_archives_to_a_release(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build-gui.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("  release:\n", workflow)
+        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("uses: actions/download-artifact@v4", workflow)
+        self.assertIn('gh release create "$GITHUB_REF_NAME"', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

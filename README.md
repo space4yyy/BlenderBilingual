@@ -210,7 +210,7 @@ python -m pip install -r requirements-build.txt
 python packaging/build_app.py
 ```
 
-产物位于 `dist/`：macOS 为 `BlenderBilingual.app`，Windows 为单文件 `BlenderBilingual.exe`。推送到 `main`、推送 `v*` 标签或在 GitHub Actions 页面手动运行 `Build desktop apps`，都会构建两个平台并上传 ZIP 产物。
+产物位于 `dist/`：macOS 为 `BlenderBilingual.app`，Windows 为单文件 `BlenderBilingual.exe`。推送到 `main` 或在 GitHub Actions 页面手动运行 `Build desktop apps`，会在该次 Actions 运行中上传两个 ZIP；推送 `v*` 标签时，还会自动创建对应 GitHub Release，并把 macOS、Windows ZIP 附加为 Release 下载文件。
 
 默认构建没有开发者证书与公证。首次打开下载的 macOS 应用时可在 Finder 中右键选择“打开”；Windows 可能显示 SmartScreen 提示。正式公开分发时建议在 CI 中另行配置 Apple Developer ID、公证和 Windows 代码签名证书。
 
