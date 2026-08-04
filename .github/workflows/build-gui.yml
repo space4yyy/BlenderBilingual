@@ -16,8 +16,10 @@ jobs:
         include:
           - os: macos-14
             artifact: BlenderBilingual-macOS
+            output: BlenderBilingual-macOS.dmg
           - os: windows-latest
             artifact: BlenderBilingual-Windows
+            output: BlenderBilingual-Windows.exe
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -33,17 +35,21 @@ jobs:
         run: python -m unittest discover -v
       - name: Build app
         run: python packaging/build_app.py
-      - name: Package macOS app
+      - name: Package macOS DMG
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent dist/BlenderBilingual.app BlenderBilingual-macOS.zip
-      - name: Package Windows app
+        run: |
+          mkdir dmg-root
+          ditto dist/BlenderBilingual.app dmg-root/BlenderBilingual.app
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "Blender Bilingual" -srcfolder dmg-root -ov -format UDZO BlenderBilingual-macOS.dmg
+      - name: Prepare Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist\BlenderBilingual.exe -DestinationPath BlenderBilingual-Windows.zip
+        run: Copy-Item dist\BlenderBilingual.exe BlenderBilingual-Windows.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: BlenderBilingual-*.zip
+          path: ${{ matrix.output }}
           if-no-files-found: error
 
   release:
@@ -64,7 +70,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release-assets/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$GITHUB_REF_NAME" release-assets/*.zip --verify-tag --generate-notes --title "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+            gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
           fi

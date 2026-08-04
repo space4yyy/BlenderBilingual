@@ -21,7 +21,7 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertIn("          cache-dependency-path: requirements-build.txt\n", workflow)
 
-    def test_tag_build_publishes_both_archives_to_a_release(self) -> None:
+    def test_tag_build_publishes_both_platform_files_to_a_release(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build-gui.yml").read_text(
             encoding="utf-8"
         )
@@ -30,6 +30,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("contents: write", workflow)
         self.assertIn("uses: actions/download-artifact@v4", workflow)
         self.assertIn('gh release create "$GITHUB_REF_NAME"', workflow)
+
+    def test_release_assets_are_dmg_and_exe_without_zip_wrappers(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build-gui.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("output: BlenderBilingual-macOS.dmg", workflow)
+        self.assertIn("output: BlenderBilingual-Windows.exe", workflow)
+        self.assertIn("hdiutil create", workflow)
+        self.assertNotIn("Compress-Archive", workflow)
+        self.assertNotIn("BlenderBilingual-*.zip", workflow)
 
 
 if __name__ == "__main__":
