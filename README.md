@@ -14,13 +14,15 @@
 - macOS：下载 `BlenderBilingual-macOS.dmg`，打开后把 `BlenderBilingual.app` 拖入“应用程序”。
 - Windows：直接下载并运行 `BlenderBilingual-Windows.exe`。
 
-macOS 成品目前没有 Developer ID 签名和 Apple 公证。首次启动请先尝试在 Finder 中右键 `BlenderBilingual.app` 并选择“打开”，或在“系统设置 → 隐私与安全性”中选择“仍要打开”。如果系统仍提示 App 已损坏或无法验证，并且文件确定来自本项目的官方 Release，可清除下载隔离属性后再打开：
+macOS 成品目前没有 Developer ID 签名和 Apple 公证。从 DMG 把 App 拖入“应用程序”后，请打开 **终端 App**，执行以下命令清除下载隔离属性，然后再启动：
 
 ```bash
 xattr -cr "/Applications/BlenderBilingual.app"
 ```
 
-通常不需要 `sudo`。请在从 DMG 拖入“应用程序”后执行这条命令；不要对来源不明的 App 关闭安全检查。
+通常不需要 `sudo`。只应对确定来自本项目官方 Release 的 App 执行这条命令，不要对来源不明的 App 关闭安全检查。
+
+Windows 成品目前没有 Authenticode 代码签名，因此 Microsoft Defender SmartScreen 可能显示“Windows 已保护你的电脑”。确认 EXE 来自本项目官方 Release 后，点击“更多信息”，再点击“仍要运行”即可启动。这是 Windows 对未知发布者和新文件信誉的提示，不是程序运行错误。
 
 使用步骤：
 
@@ -82,7 +84,7 @@ python packaging/build_app.py
 - `BlenderBilingual-macOS.dmg`
 - `BlenderBilingual-Windows.exe`
 
-默认构建未使用商业代码签名和 Apple 公证。macOS 首次运行方式见上方说明；Windows 可能显示 SmartScreen 提示。
+默认构建未使用商业代码签名和 Apple 公证。macOS Gatekeeper 与 Windows SmartScreen 的首次运行方式见上方说明。
 
 ## 许可证与来源
 
