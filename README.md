@@ -9,7 +9,7 @@
 
 ## 下载与使用
 
-请从 [GitHub Releases](https://github.com/space4yyy/zh_HANS_Bilingual/releases/latest) 下载当前平台的成品：
+请从 [GitHub Releases](https://github.com/space4yyy/BlenderBilingual/releases/latest) 下载当前平台的成品：
 
 - macOS：下载 `BlenderBilingual-macOS.dmg`，打开后把 `BlenderBilingual.app` 拖入“应用程序”。
 - Windows：直接下载并运行 `BlenderBilingual-Windows.exe`。
