@@ -11,19 +11,19 @@
 从项目的 GitHub Actions 下载对应平台产物并解压：
 
 - macOS：打开 `BlenderBilingual.app`；
-- Windows：运行 `BlenderBilingual.exe`，系统会请求管理员权限。
+- Windows：运行 `BlenderBilingual.exe`，无需管理员权限。
 
-工具启动后会自动查找本机 Blender，也可以点“手动选择…”指定 `Blender.app`、安装目录或 `blender.exe`。选择“中 - 英”或“英 - 中”，关闭正在运行的 Blender，然后点“注入并启用”。工具会直接读取所选 Blender 自带的官方简中 MO，临时生成对应顺序、校验、注入并保存语言偏好；不会下载发行包，也不会在电脑上长期保存生成缓存。
+工具启动后会自动查找本机 Blender，也可以点“手动选择…”指定 `Blender.app`、安装目录或 `blender.exe`。选择“中 - 英”或“英 - 中”，关闭正在运行的 Blender，然后点“注入并启用”。工具会直接读取所选 Blender 自带的官方简中 MO，临时生成并校验对应顺序，再安装到该版本的 Blender 用户数据目录并保存语言偏好；不会下载发行包，也不会修改 Blender 应用或 `Program Files`。
 
 点“还原官方简中”会先把用户语言切回 `zh_HANS`，再移除本工具管理的菜单项和语言目录。工具不会修改官方简中 MO。
 
-> macOS 首次修改 Blender 时可能请求“应用管理”权限；请允许 BlenderBilingual 更新其他 App。若此前拒绝过，请打开“系统设置 → 隐私与安全性 → 应用管理”重新允许。只有 Blender 目录的 Unix 权限确实不可写时，工具才会额外请求管理员密码。Blender 用户偏好始终由当前登录账户保存，不会写入 root 配置。Windows 标准安装通常位于受保护目录，因此打包的 EXE 会自动请求管理员权限。
+> macOS 与 Windows 都不需要管理员权限。工具只读取 Blender 安装目录中的官方资源，所有新增文件都写入当前登录账户的 Blender 用户目录。
 
 脚本会读取本地 Blender 的精确版本。若 `packs/` 中没有对应版本，会自动使用该 Blender 自带的官方简中 MO 生成并校验双语包，然后继续安装。
 
 ### 1. 脚本安装
 
-脚本会备份 `languages` 文件、安装 MO、添加独立语言项，并把当前用户语言设为 `zh_HANS@bilingual`。先关闭 Blender，再执行安装。
+脚本会在 Blender 返回的用户数据目录中创建 `languages` 文件、安装 MO、添加独立语言项，并把当前用户语言设为 `zh_HANS@bilingual`。先关闭 Blender，再执行安装。
 
 macOS：
 
@@ -36,7 +36,7 @@ python3 scripts/bilingual.py install \
   --blender /Applications/Blender.app
 ```
 
-Windows：请在“以管理员身份运行”的 PowerShell 或 Windows Terminal 中执行，并把路径改为实际安装位置。
+Windows：在普通 PowerShell 或 Windows Terminal 中执行，并把路径改为实际安装位置。
 
 ```powershell
 py scripts\bilingual.py install `
@@ -51,10 +51,11 @@ py scripts\bilingual.py install `
 
 ### 2. 手动安装
 
-1. 关闭 Blender，并备份安装目录内的 `datafiles/locale/languages`。
-2. 在 `datafiles/locale/` 下创建 `zh_HANS@bilingual/LC_MESSAGES/`。
-3. 将对应版本的 `packs/<版本>/zh_HANS@bilingual/LC_MESSAGES/blender.mo` 复制到新目录。
-4. 打开 `datafiles/locale/languages`，选择一个未占用的数字 ID，并添加：
+1. 关闭 Blender，找到当前版本的用户 `datafiles` 目录。
+2. 从 Blender 安装目录复制官方 `datafiles/locale/languages` 到用户目录的 `datafiles/locale/languages`；若用户文件已经存在，请保留其中的自定义项。
+3. 在用户目录的 `datafiles/locale/` 下创建 `zh_HANS@bilingual/LC_MESSAGES/`。
+4. 将对应版本的 `packs/<版本>/zh_HANS@bilingual/LC_MESSAGES/blender.mo` 复制到新目录。
+5. 打开用户目录中的 `locale/languages`，选择一个未占用的数字 ID，并添加：
 
    ```text
    60:Chinese (Simplified, Bilingual) - 简中 English:zh_HANS@bilingual:100%
@@ -62,21 +63,21 @@ py scripts\bilingual.py install `
 
    如果 ID 60 已存在，请换成其他未占用数字；同一文件中的 ID 必须唯一。
 
-5. 启动 Blender，进入 `Edit > Preferences > Interface > Translation > Language`，选择 `Chinese (Simplified, Bilingual) - 简中 English`，然后保存偏好。
+6. 启动 Blender，进入 `Edit > Preferences > Interface > Translation > Language`，选择 `Chinese (Simplified, Bilingual) - 简中 English`，然后保存偏好。
 
-macOS 目标目录：
-
-```text
-/Applications/Blender.app/Contents/Resources/5.1/datafiles/locale/
-```
-
-Windows 默认目标目录：
+macOS 默认用户目录（以 Blender 5.2 为例）：
 
 ```text
-C:\Program Files\Blender Foundation\Blender 5.1\5.1\datafiles\locale\
+~/Library/Application Support/Blender/5.2/datafiles/locale/
 ```
 
-Windows 若使用便携版，目标目录位于 `blender.exe` 同级的 `5.1\datafiles\locale\`。手动安装不会自动修改用户偏好，必须完成第 5 步。
+Windows 默认用户目录（以 Blender 5.2 为例）：
+
+```text
+%APPDATA%\Blender Foundation\Blender\5.2\datafiles\locale\
+```
+
+若设置过 `BLENDER_USER_RESOURCES` 或 `BLENDER_USER_DATAFILES`，实际目录可能不同。可在 Blender 的 Python Console 执行 `bpy.utils.user_resource('DATAFILES')` 查看准确路径。手动安装不会自动修改用户偏好，必须完成第 6 步。
 
 ## 已有语言包
 
@@ -89,7 +90,7 @@ Windows 若使用便携版，目标目录位于 `blender.exe` 同级的 `5.1\dat
 
 - Python 3.10 或更高版本。
 - 生成、校验和远程提取只使用 Python 标准库。
-- 自动安装/卸载支持 macOS Blender.app 和 Windows 标准/便携目录；生成的 MO 本身不受操作系统限制。
+- 自动安装/卸载支持 macOS Blender.app 和 Windows 标准/便携目录；只写当前账户的用户目录，生成的 MO 本身不受操作系统限制。
 
 ## 生成语言包
 
@@ -164,9 +165,9 @@ python3 scripts/bilingual.py install \
   --version 5.1.2
 ```
 
-若终端没有修改应用包的权限，请按 macOS 提示授予权限或使用具备相应权限的终端。安装器会：
+安装器会：
 
-1. 备份原始 `languages` 文件；
+1. 调用 Blender 查询该版本真实的用户 `datafiles` 路径；
 2. 动态选择未占用的语言 ID；
 3. 添加带托管标记的独立语言项；
 4. 原子写入双语 MO。
@@ -182,7 +183,7 @@ python3 scripts/bilingual.py uninstall --dry-run
 python3 scripts/bilingual.py uninstall
 ```
 
-Windows 卸载时必须显式指定 `blender.exe`，并使用管理员终端：
+Windows 卸载时必须显式指定 `blender.exe`，使用普通终端即可：
 
 ```powershell
 py scripts\bilingual.py uninstall `
@@ -193,7 +194,7 @@ py scripts\bilingual.py uninstall `
   --blender "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
 ```
 
-卸载前会把当前用户语言切回官方简中，然后只移除本项目管理的菜单区块和 `zh_HANS@bilingual` 目录，不覆盖其他语言修改。可用 `--no-reset-language` 跳过偏好修改。Blender 更新可能清除自定义语言，更新后重新运行安装命令即可。
+卸载前会把当前用户语言切回官方简中，然后只移除用户目录中本项目管理的菜单区块和 `zh_HANS@bilingual` 目录，不覆盖其他语言修改。可用 `--no-reset-language` 跳过偏好修改。若曾使用旧版工具修改过 Blender 安装目录，新版还原会用干净的用户语言列表屏蔽旧菜单项，不会再次申请权限修改应用包；Blender 更新后旧文件也会自然消失。
 
 ## 添加其他 4.x / 5.x 版本
 
@@ -214,7 +215,7 @@ python packaging/build_app.py
 
 默认构建没有开发者证书与公证。首次打开下载的 macOS 应用时可在 Finder 中右键选择“打开”；Windows 可能显示 SmartScreen 提示。正式公开分发时建议在 CI 中另行配置 Apple Developer ID、公证和 Windows 代码签名证书。
 
-macOS 构建会声明 App Management 用途，以便系统允许工具修改用户选择的 Blender.app。原始 `languages` 安全备份保存在 `~/Library/Application Support/Blender Bilingual/backups/<版本>/`，不会在 Blender.app 内额外创建备份文件。Apple 对 App Management 的说明见[“更改 Mac 上的隐私与安全性设置”](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac)。
+桌面工具不会请求 Windows UAC、macOS 管理员密码或 App Management 权限。它只读取所选 Blender 的官方语言资源，并写入当前账户的版本化 Blender 用户目录。
 
 ## 许可证与来源
 

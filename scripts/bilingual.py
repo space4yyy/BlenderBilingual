@@ -36,6 +36,7 @@ MANAGED_BEGIN = "# BEGIN zh_HANS_Bilingual managed"
 MANAGED_END = "# END zh_HANS_Bilingual managed"
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 BLENDER_VERSION_RE = re.compile(r"\bBlender\s+(\d+\.\d+\.\d+)\b")
+USER_DATAFILES_MARKER = "ZH_HANS_BILINGUAL_USER_DATAFILES="
 PRINTF_RE = re.compile(
     r"%(?!%)(?:\d+\$|\([^)]+\))?[-+#0 ']*"
     r"(?:\*(?:\d+\$)?|\d+)?(?:\.(?:\*(?:\d+\$)?|\d+))?"
@@ -618,6 +619,34 @@ def set_blender_language(executable: Path, language_code: str) -> None:
         raise BilingualError(f"Blender 保存用户语言偏好失败：{summary}")
 
 
+def blender_user_datafiles(executable: Path) -> Path:
+    """Ask Blender for this version's writable per-user datafiles directory."""
+    expression = (
+        "import bpy; "
+        f"print({USER_DATAFILES_MARKER!r} + bpy.utils.user_resource('DATAFILES'))"
+    )
+    try:
+        result = subprocess.run(
+            [str(executable), "--background", "--python-expr", expression],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BilingualError(f"无法启动 Blender 查询用户语言目录：{exc}") from exc
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout).strip().splitlines()
+        summary = details[-1] if details else f"退出码 {result.returncode}"
+        raise BilingualError(f"Blender 查询用户语言目录失败：{summary}")
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        if line.startswith(USER_DATAFILES_MARKER):
+            value = line[len(USER_DATAFILES_MARKER) :].strip()
+            if value:
+                return Path(value).expanduser().resolve()
+    raise BilingualError("Blender 未返回用户语言目录")
+
+
 def install_pack(
     blender: Path,
     version: str | None,
@@ -625,7 +654,7 @@ def install_pack(
     packs_root: Path = PACKS_ROOT,
     activate: bool = True,
     order: str = ORDER_ZH_EN,
-    backup_path: Path | None = None,
+    user_datafiles: Path | None = None,
 ) -> str:
     order = normalize_order(order)
     executable, datafiles, detected_version = blender_layout(blender)
@@ -656,19 +685,31 @@ def install_pack(
             )
             verify_pack(detected_version, packs_root, order)
             auto_generated = True
-    languages = datafiles / "locale" / "languages"
-    destination = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
-    if not languages.is_file():
-        raise BilingualError(f"找不到 languages 文件：{languages}")
-    original_text = languages.read_text(encoding="utf-8")
+    system_languages = datafiles / "locale" / "languages"
+    if not system_languages.is_file():
+        raise BilingualError(f"找不到 Blender 自带的 languages 文件：{system_languages}")
+    user_datafiles = (
+        user_datafiles.expanduser().resolve()
+        if user_datafiles is not None
+        else blender_user_datafiles(executable)
+    )
+    languages = user_datafiles / "locale" / "languages"
+    destination = user_datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
+    languages_existed = languages.is_file()
+    original_text = (
+        languages.read_text(encoding="utf-8")
+        if languages_existed
+        else system_languages.read_text(encoding="utf-8")
+    )
     clean_text, had_block = remove_managed_block(original_text)
-    if not had_block and any(
+    user_had_block = languages_existed and had_block
+    if not user_had_block and any(
         line.split(":")[2:3] == [LANGUAGE_CODE]
         for line in clean_text.splitlines()
         if not line.lstrip().startswith("#") and line.count(":") >= 2
     ):
         raise BilingualError(f"已存在非本项目管理的语言项：{LANGUAGE_CODE}")
-    if not had_block and destination.exists():
+    if not user_had_block and destination.exists():
         raise BilingualError(f"已存在非本项目管理的语言文件：{destination}")
     free_id = next(number for number in range(60, 10000) if number not in used_language_ids(clean_text))
     block = f"{MANAGED_BEGIN}\n{free_id}:{LANGUAGE_LABEL}:{LANGUAGE_CODE}:100%\n{MANAGED_END}\n"
@@ -677,19 +718,11 @@ def install_pack(
         activation = "并设为当前用户语言" if activate else "但不修改当前用户语言"
         generation = "将先从本地 Blender 自动生成对应语言包；" if will_auto_generate else ""
         return f"{generation}将安装 {detected_version} 到 {destination}，语言 ID {free_id}，{activation}"
-    backup = (
-        backup_path.expanduser().resolve()
-        if backup_path is not None
-        else languages.with_name("languages.zh_HANS_Bilingual.backup")
-    )
     destination_existed = destination.exists()
     previous_destination = destination.read_bytes() if destination_existed else None
     wrote_destination = False
     wrote_languages = False
     try:
-        if not backup.exists():
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(languages, backup)
         atomic_write(destination, source_mo.read_bytes())
         wrote_destination = True
         atomic_write(languages, updated_text.encode("utf-8"))
@@ -699,7 +732,10 @@ def install_pack(
     except (OSError, BilingualError) as exc:
         if wrote_languages:
             try:
-                atomic_write(languages, original_text.encode("utf-8"))
+                if languages_existed:
+                    atomic_write(languages, original_text.encode("utf-8"))
+                else:
+                    languages.unlink(missing_ok=True)
             except OSError:
                 pass
         if wrote_destination:
@@ -712,31 +748,53 @@ def install_pack(
                 pass
         if isinstance(exc, BilingualError):
             raise
-        raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
+        raise BilingualError(f"无法修改 Blender 用户语言目录：{exc}") from exc
     activation = "，已设为当前用户语言" if activate else ""
     generation = f"已自动生成 Blender {detected_version} 双语语言包；" if auto_generated else ""
     return f"{generation}已安装 Blender {detected_version} 双语语言，语言 ID {free_id}{activation}"
 
 
-def uninstall_pack(blender: Path, dry_run: bool, reset_language: bool = True) -> str:
+def uninstall_pack(
+    blender: Path,
+    dry_run: bool,
+    reset_language: bool = True,
+    user_datafiles: Path | None = None,
+) -> str:
     executable, datafiles, detected_version = blender_layout(blender)
-    languages = datafiles / "locale" / "languages"
-    destination_root = datafiles / "locale" / LANGUAGE_CODE
-    original_text = languages.read_text(encoding="utf-8")
-    updated_text, had_block = remove_managed_block(original_text)
+    system_languages = datafiles / "locale" / "languages"
+    if not system_languages.is_file():
+        raise BilingualError(f"找不到 Blender 自带的 languages 文件：{system_languages}")
+    user_datafiles = (
+        user_datafiles.expanduser().resolve()
+        if user_datafiles is not None
+        else blender_user_datafiles(executable)
+    )
+    languages = user_datafiles / "locale" / "languages"
+    destination_root = user_datafiles / "locale" / LANGUAGE_CODE
+    user_text = languages.read_text(encoding="utf-8") if languages.is_file() else None
+    source_text = user_text if user_text is not None else system_languages.read_text(encoding="utf-8")
+    updated_text, had_block = remove_managed_block(source_text)
+    user_had_block = user_text is not None and had_block
+    _clean_system_text, legacy_system_block = remove_managed_block(
+        system_languages.read_text(encoding="utf-8")
+    )
     if dry_run:
         reset = "并将当前用户语言切回官方简中" if reset_language else "且不修改当前用户语言"
-        return f"将卸载 Blender {detected_version} 双语语言（菜单项：{'有' if had_block else '无'}），{reset}"
+        found = user_had_block or legacy_system_block
+        return f"将卸载 Blender {detected_version} 双语语言（用户文件：{'有' if found else '无'}），{reset}"
     try:
         if reset_language:
             set_blender_language(executable, "zh_HANS")
-        if had_block:
+        if user_had_block:
             atomic_write(languages, updated_text.encode("utf-8"))
-        if had_block and destination_root.exists():
+        elif legacy_system_block and user_text is None:
+            # Shadow an old system-level injection without modifying Blender.app.
+            atomic_write(languages, updated_text.encode("utf-8"))
+        if user_had_block and destination_root.exists():
             shutil.rmtree(destination_root)
     except OSError as exc:
-        raise BilingualError(f"无法修改 Blender 安装目录：{exc}") from exc
-    if had_block:
+        raise BilingualError(f"无法修改 Blender 用户语言目录：{exc}") from exc
+    if user_had_block or legacy_system_block:
         return f"已卸载 Blender {detected_version} 双语语言"
     preference = "已切回官方简中" if reset_language else "未修改当前用户语言"
     return f"Blender {detected_version} 未发现本工具管理的双语语言；{preference}"

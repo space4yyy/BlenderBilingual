@@ -19,6 +19,7 @@ from scripts.bilingual import (
     ORDER_EN_ZH,
     ORDER_ZH_EN,
     bilingual_translation,
+    blender_user_datafiles,
     build_from_source,
     discover_blender_installations,
     expected_checksum,
@@ -250,14 +251,18 @@ class InstallTests(unittest.TestCase):
             datafiles, packs = self.prepare_without_pack(root)
             layout = (root / "blender", datafiles, "5.2.0")
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
-                result = install_pack(root / "Blender.app", None, False, packs, activate=False)
+                result = install_pack(
+                    root / "Blender.app", None, False, packs, activate=False,
+                    user_datafiles=root / "user-data",
+                )
             output, manifest = pack_paths("5.2.0", packs)
             self.assertTrue(output.is_file())
             self.assertTrue(manifest.is_file())
             self.assertIn("已自动生成", result)
             self.assertTrue(
-                (datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo").is_file()
+                (root / "user-data" / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo").is_file()
             )
+            self.assertFalse((datafiles / "locale" / LANGUAGE_CODE).exists())
 
     def test_install_dry_run_reports_missing_pack_without_building(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -265,7 +270,10 @@ class InstallTests(unittest.TestCase):
             datafiles, packs = self.prepare_without_pack(root)
             layout = (root / "blender", datafiles, "5.2.0")
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
-                result = install_pack(root / "Blender.app", None, True, packs, activate=False)
+                result = install_pack(
+                    root / "Blender.app", None, True, packs, activate=False,
+                    user_datafiles=root / "user-data",
+                )
             output, manifest = pack_paths("5.2.0", packs)
             self.assertFalse(output.exists())
             self.assertFalse(manifest.exists())
@@ -288,28 +296,41 @@ class InstallTests(unittest.TestCase):
             root = Path(temporary)
             datafiles, packs = self.prepare(root)
             layout = (root / "blender", datafiles, "5.1.2")
+            user_datafiles = root / "user-data"
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
-                first = install_pack(root / "Blender.app", None, False, packs, activate=False)
-                second = install_pack(root / "Blender.app", None, False, packs, activate=False)
+                first = install_pack(
+                    root / "Blender.app", None, False, packs, activate=False,
+                    user_datafiles=user_datafiles,
+                )
+                second = install_pack(
+                    root / "Blender.app", None, False, packs, activate=False,
+                    user_datafiles=user_datafiles,
+                )
                 self.assertIn("语言 ID 61", first)
                 self.assertIn("语言 ID 61", second)
-                languages = (datafiles / "locale" / "languages").read_text(encoding="utf-8")
+                languages = (user_datafiles / "locale" / "languages").read_text(encoding="utf-8")
                 self.assertEqual(1, languages.count(MANAGED_BEGIN))
                 self.assertEqual(1, languages.count(MANAGED_END))
                 self.assertTrue(
-                    (datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo").is_file()
+                    (user_datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo").is_file()
                 )
-                uninstall_pack(root / "Blender.app", False, reset_language=False)
-                languages = (datafiles / "locale" / "languages").read_text(encoding="utf-8")
+                uninstall_pack(
+                    root / "Blender.app", False, reset_language=False,
+                    user_datafiles=user_datafiles,
+                )
+                languages = (user_datafiles / "locale" / "languages").read_text(encoding="utf-8")
                 self.assertNotIn(LANGUAGE_CODE, languages)
                 self.assertIn("Occupied:test", languages)
-                self.assertFalse((datafiles / "locale" / LANGUAGE_CODE).exists())
+                self.assertFalse((user_datafiles / "locale" / LANGUAGE_CODE).exists())
+                self.assertNotIn(LANGUAGE_CODE, (datafiles / "locale" / "languages").read_text())
 
-    def test_install_can_keep_backup_outside_blender_bundle(self) -> None:
+    def test_install_never_writes_blender_installation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             datafiles, packs = self.prepare(root)
-            external_backup = root / "user-data" / "5.1.2" / "languages"
+            system_languages = datafiles / "locale" / "languages"
+            original_system = system_languages.read_bytes()
+            user_datafiles = root / "user-data"
             layout = (root / "blender", datafiles, "5.1.2")
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
                 install_pack(
@@ -318,34 +339,43 @@ class InstallTests(unittest.TestCase):
                     False,
                     packs,
                     activate=False,
-                    backup_path=external_backup,
+                    user_datafiles=user_datafiles,
                 )
-            self.assertTrue(external_backup.is_file())
-            self.assertFalse(
-                (datafiles / "locale" / "languages.zh_HANS_Bilingual.backup").exists()
-            )
+            self.assertEqual(original_system, system_languages.read_bytes())
+            self.assertFalse((datafiles / "locale" / LANGUAGE_CODE).exists())
+            self.assertTrue((user_datafiles / "locale" / "languages").is_file())
 
     def test_install_rejects_unmanaged_same_language(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             datafiles, packs = self.prepare(root)
-            languages = datafiles / "locale" / "languages"
+            user_datafiles = root / "user-data"
+            languages = user_datafiles / "locale" / "languages"
+            languages.parent.mkdir(parents=True)
+            languages.write_text((datafiles / "locale" / "languages").read_text())
             languages.write_text(languages.read_text() + f"62:Custom:{LANGUAGE_CODE}:100%\n")
             layout = (root / "blender", datafiles, "5.1.2")
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
                 with self.assertRaises(BilingualError):
-                    install_pack(root / "Blender.app", None, False, packs, activate=False)
+                    install_pack(
+                        root / "Blender.app", None, False, packs, activate=False,
+                        user_datafiles=user_datafiles,
+                    )
 
     def test_uninstall_preserves_unmanaged_language_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             datafiles, _packs = self.prepare(root)
-            unmanaged = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
+            user_datafiles = root / "user-data"
+            unmanaged = user_datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
             unmanaged.parent.mkdir(parents=True)
             unmanaged.write_bytes(b"unmanaged")
             layout = (root / "blender", datafiles, "5.1.2")
             with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
-                result = uninstall_pack(root / "Blender.app", False, reset_language=False)
+                result = uninstall_pack(
+                    root / "Blender.app", False, reset_language=False,
+                    user_datafiles=user_datafiles,
+                )
             self.assertTrue(unmanaged.is_file())
             self.assertIn("未发现本工具管理", result)
 
@@ -358,6 +388,43 @@ class InstallTests(unittest.TestCase):
         expression = command[-1]
         self.assertIn(f"language={LANGUAGE_CODE!r}", expression)
         self.assertIn("save_userpref", expression)
+
+    def test_user_datafiles_path_is_reported_by_blender(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout="Blender 5.2.0\nZH_HANS_BILINGUAL_USER_DATAFILES=/tmp/blender/5.2/datafiles\n",
+            stderr="",
+        )
+        with mock.patch("scripts.bilingual.subprocess.run", return_value=completed):
+            path = blender_user_datafiles(Path("/Applications/Blender.app/Contents/MacOS/Blender"))
+        self.assertEqual(Path("/tmp/blender/5.2/datafiles").resolve(), path)
+
+    def test_uninstall_shadows_legacy_system_install_without_modifying_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, _packs = self.prepare(root)
+            system_languages = datafiles / "locale" / "languages"
+            legacy = (
+                system_languages.read_text()
+                + f"{MANAGED_BEGIN}\n61:Legacy:{LANGUAGE_CODE}:100%\n{MANAGED_END}\n"
+            )
+            system_languages.write_text(legacy)
+            legacy_mo = datafiles / "locale" / LANGUAGE_CODE / "LC_MESSAGES" / "blender.mo"
+            legacy_mo.parent.mkdir(parents=True)
+            legacy_mo.write_bytes(b"legacy")
+            user_datafiles = root / "user-data"
+            layout = (root / "blender", datafiles, "5.1.2")
+            with mock.patch("scripts.bilingual.blender_layout", return_value=layout):
+                uninstall_pack(
+                    root / "Blender.app", False, reset_language=False,
+                    user_datafiles=user_datafiles,
+                )
+            self.assertEqual(legacy, system_languages.read_text())
+            self.assertTrue(legacy_mo.exists())
+            self.assertNotIn(
+                LANGUAGE_CODE,
+                (user_datafiles / "locale" / "languages").read_text(),
+            )
 
 
 if __name__ == "__main__":

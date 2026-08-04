@@ -1,6 +1,6 @@
 ---
 name: blender-bilingual-mo
-description: Build, verify, install, update, or uninstall Simplified Chinese and English bilingual GNU MO language packs for Blender 4.x and 5.x in this repository. Use when an AI agent needs to generate a pack from an installed Blender, a supplied official zh_HANS blender.mo, or an exact Blender release; change the bilingual display rule; validate catalogs and manifests; or manage a macOS or Windows Blender installation and saved language preference.
+description: Build, verify, install, update, or uninstall Simplified Chinese and English bilingual GNU MO language packs for Blender 4.x and 5.x in this repository. Use when an AI agent needs to generate a pack from an installed Blender, a supplied official zh_HANS blender.mo, or an exact Blender release; change the bilingual display rule; validate catalogs and manifests; or manage a macOS or Windows user-level Blender language and saved preference.
 ---
 
 # Blender Bilingual MO
@@ -60,7 +60,7 @@ When changing MO parsing, transformation, download, installation, or preference 
 
 ## Install on macOS or Windows
 
-Treat installation as an external mutation because it edits the Blender installation directory and the user's Blender preferences. Obtain explicit user authorization before running the real command. Start with:
+Treat installation as an external mutation because it writes the current account's Blender datafiles and preferences. Obtain explicit user authorization before running the real command. Start with:
 
 ```bash
 python3 scripts/bilingual.py install \
@@ -73,7 +73,7 @@ Then, when authorized, run the same command without `--dry-run`. By default it i
 
 If the exact detected Blender version has no pack, `install` automatically builds it from that installation's official `zh_HANS` MO and verifies it before mutation. `--dry-run` must only report this pending build and must not create files. Never auto-rebuild a partially present, corrupt, or failed-verification pack; surface that error for inspection.
 
-On Windows, run an Administrator PowerShell and pass the full `blender.exe` path explicitly:
+On Windows, use a normal PowerShell and pass the full `blender.exe` path explicitly:
 
 ```powershell
 py scripts\bilingual.py install `
@@ -93,11 +93,11 @@ Run this restart check with normal macOS system access. A sandboxed Blender proc
 
 ## Desktop GUI
 
-Use `blender_bilingual_gui.py` as the single GUI entry point. It must discover local Blender installations on launch while retaining manual path selection. For each injection, build the selected order from that exact installation's official `zh_HANS` MO in a temporary directory, verify it, install it, activate it, and remove the temporary directory. Never bundle repository `packs/` into the desktop executable.
+Use `blender_bilingual_gui.py` as the single GUI entry point. It must discover local Blender installations on launch while retaining manual path selection. For each injection, build the selected order from that exact installation's official `zh_HANS` MO in a temporary directory, verify it, install it into the user datafiles returned by `bpy.utils.user_resource('DATAFILES')`, activate it, and remove the temporary directory. Never bundle repository `packs/` into the desktop executable.
 
-Build native artifacts with `python packaging/build_app.py`. PyInstaller is not a cross-compiler: build the macOS `.app` on macOS and the Windows single-file EXE on Windows. Keep Windows `--uac-admin`, because standard Blender installations are normally protected. The restore action must use the normal scoped uninstall path and reset the language to official Simplified Chinese.
+Build native artifacts with `python packaging/build_app.py`. PyInstaller is not a cross-compiler: build the macOS `.app` on macOS and the Windows single-file EXE on Windows. Do not request Windows UAC, macOS administrator privileges, or App Management permission. The restore action must use the normal scoped user-level uninstall path and reset the language to official Simplified Chinese.
 
-On macOS, declare `NSAppBundlesUsageDescription` in the final signed bundle so App Management can authorize changes to Blender.app. Keep the original `languages` backup under the logged-in user's Application Support directory, not inside Blender.app. Prefer direct writes when Unix permissions permit so TCC attributes the request to the GUI; use the administrator helper only when the target is not writable. Always run `set_blender_language` in the original GUI process so preferences belong to the logged-in user, never root. If preference activation fails after an elevated install, invoke the elevated uninstall helper to roll back the managed files.
+Never write into Blender.app or `Program Files`. Read the official MO and languages list there, but write the managed list and MO only under Blender's version-specific user datafiles. If activation fails, roll back the files written by that attempt. A legacy system-level managed block may be copied as the initial user list and must be removed before adding the user-level block.
 
 ## Uninstall on macOS or Windows
 
@@ -114,7 +114,7 @@ The normal uninstall path must save official Simplified Chinese `zh_HANS` before
 
 - Do not manually edit `userpref.blend`.
 - Do not overwrite the official `zh_HANS/LC_MESSAGES/blender.mo`.
-- Preserve unrelated entries in Blender's `locale/languages` file.
+- Preserve unrelated entries in the user's `locale/languages` file.
 - If preference activation fails, confirm the installer rolled back its managed block and MO before retrying.
 - If Blender is currently open, avoid changing saved preferences until it is closed; the running process could overwrite them on exit.
 - Read `README.md` and `python3 scripts/bilingual.py --help` when command behavior or supported flags may have changed.
