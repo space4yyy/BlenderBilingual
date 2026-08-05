@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from blender_bilingual_gui import inject, restore
+from blender_bilingual_gui import enable_windows_high_dpi, inject, restore
 from scripts.bilingual import MOCatalog, MOEntry, ORDER_EN_ZH
 
 
@@ -64,6 +64,16 @@ class GUIBackendTests(unittest.TestCase):
         self.assertNotIn("administrator privileges", source)
         self.assertNotIn("--privileged-action", source)
         self.assertNotIn("osascript", source)
+
+    def test_gui_uses_inline_feedback_instead_of_message_boxes(self) -> None:
+        source = Path("blender_bilingual_gui.py").read_text(encoding="utf-8")
+        self.assertNotIn("messagebox", source)
+        self.assertNotIn("askokcancel", source)
+        self.assertIn("_request_confirmation", source)
+        self.assertIn("复制详情", source)
+
+    def test_high_dpi_setup_is_a_noop_outside_windows(self) -> None:
+        enable_windows_high_dpi("darwin")
 
 
 if __name__ == "__main__":
