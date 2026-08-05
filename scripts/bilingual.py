@@ -771,28 +771,50 @@ def uninstall_pack(
     )
     languages = user_datafiles / "locale" / "languages"
     destination_root = user_datafiles / "locale" / LANGUAGE_CODE
+    official_mo = datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
+    user_official_mo = user_datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
     user_text = languages.read_text(encoding="utf-8") if languages.is_file() else None
     source_text = user_text if user_text is not None else system_languages.read_text(encoding="utf-8")
     updated_text, had_block = remove_managed_block(source_text)
     user_had_block = user_text is not None and had_block
-    _clean_system_text, legacy_system_block = remove_managed_block(
-        system_languages.read_text(encoding="utf-8")
-    )
+    system_text = system_languages.read_text(encoding="utf-8")
+    clean_system_text, legacy_system_block = remove_managed_block(system_text)
+    keep_user_languages = legacy_system_block or updated_text != clean_system_text
     if dry_run:
         reset = "并将当前用户语言切回官方简中" if reset_language else "且不修改当前用户语言"
         found = user_had_block or legacy_system_block
         return f"将卸载 Blender {detected_version} 双语语言（用户文件：{'有' if found else '无'}），{reset}"
+    if reset_language and keep_user_languages and not official_mo.is_file():
+        raise BilingualError(f"找不到 Blender 自带的官方简中语言包：{official_mo}")
+    languages_existed = languages.is_file()
+    original_languages = languages.read_bytes() if languages_existed else None
+    official_existed = user_official_mo.is_file()
+    original_official = user_official_mo.read_bytes() if official_existed else None
     try:
+        if keep_user_languages:
+            atomic_write(languages, updated_text.encode("utf-8"))
+        elif languages_existed:
+            languages.unlink()
+        if reset_language and keep_user_languages:
+            atomic_write(user_official_mo, official_mo.read_bytes())
         if reset_language:
             set_blender_language(executable, "zh_HANS")
-        if user_had_block:
-            atomic_write(languages, updated_text.encode("utf-8"))
-        elif legacy_system_block and user_text is None:
-            # Shadow an old system-level injection without modifying Blender.app.
-            atomic_write(languages, updated_text.encode("utf-8"))
         if user_had_block and destination_root.exists():
             shutil.rmtree(destination_root)
-    except OSError as exc:
+    except (OSError, BilingualError) as exc:
+        try:
+            if languages_existed and original_languages is not None:
+                atomic_write(languages, original_languages)
+            else:
+                languages.unlink(missing_ok=True)
+            if official_existed and original_official is not None:
+                atomic_write(user_official_mo, original_official)
+            else:
+                user_official_mo.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if isinstance(exc, BilingualError):
+            raise
         raise BilingualError(f"无法修改 Blender 用户语言目录：{exc}") from exc
     if user_had_block or legacy_system_block:
         return f"已卸载 Blender {detected_version} 双语语言"

@@ -205,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             actions.grid(row=8, column=0, columnspan=2, sticky="e", pady=(20, 0))
             self.restore_button = ttk.Button(
                 actions,
-                text="还原官方简中",
+                text="还原",
                 style="Secondary.TButton",
                 command=self._restore,
             )
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             self._start_restore(blender)
 
         def _start_restore(self, blender: Path) -> None:
-            self._set_status("正在还原官方简中…")
+            self._set_status("正在还原…")
             self._run(lambda: restore(blender), lambda result: self._succeeded("还原完成", result))
 
         def _run(self, work, success, quiet: bool = False) -> None:

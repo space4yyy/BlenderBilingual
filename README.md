@@ -32,7 +32,7 @@ Windows 成品目前没有 Authenticode 代码签名，因此 Microsoft Defender
 4. 选择“中 - 英”或“英 - 中”。
 5. 点击“注入并启用”，完成后重新打开 Blender。
 
-需要恢复时，关闭 Blender 后点击“还原官方简中”。
+需要恢复时，关闭 Blender 后点击“还原”。工具会移除双语语言，并尝试切回官方简中。
 
 macOS 与 Windows 均不需要管理员权限。工具只读取 Blender 安装目录中的官方语言资源，生成结果写入当前账户的 Blender 用户数据目录，不修改 `Blender.app`、`Program Files` 或官方简中 MO。
 

@@ -318,11 +318,11 @@ class InstallTests(unittest.TestCase):
                     root / "Blender.app", False, reset_language=False,
                     user_datafiles=user_datafiles,
                 )
-                languages = (user_datafiles / "locale" / "languages").read_text(encoding="utf-8")
-                self.assertNotIn(LANGUAGE_CODE, languages)
-                self.assertIn("Occupied:test", languages)
+                self.assertFalse((user_datafiles / "locale" / "languages").exists())
                 self.assertFalse((user_datafiles / "locale" / LANGUAGE_CODE).exists())
-                self.assertNotIn(LANGUAGE_CODE, (datafiles / "locale" / "languages").read_text())
+                system_text = (datafiles / "locale" / "languages").read_text()
+                self.assertIn("Occupied:test", system_text)
+                self.assertNotIn(LANGUAGE_CODE, system_text)
 
     def test_install_never_writes_blender_installation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -425,6 +425,40 @@ class InstallTests(unittest.TestCase):
                 LANGUAGE_CODE,
                 (user_datafiles / "locale" / "languages").read_text(),
             )
+
+    def test_uninstall_restores_official_mo_when_shadowing_legacy_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            datafiles, _packs = self.prepare(root)
+            official_mo = datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
+            official_mo.parent.mkdir(parents=True)
+            official_mo.write_bytes(b"official-zh-HANS")
+            system_languages = datafiles / "locale" / "languages"
+            clean_system = system_languages.read_text()
+            system_languages.write_text(
+                clean_system
+                + f"{MANAGED_BEGIN}\n61:Legacy:{LANGUAGE_CODE}:100%\n{MANAGED_END}\n"
+            )
+            user_datafiles = root / "user-data"
+            user_languages = user_datafiles / "locale" / "languages"
+            user_languages.parent.mkdir(parents=True)
+            user_languages.write_text(clean_system)
+            layout = (root / "blender", datafiles, "5.1.2")
+
+            with (
+                mock.patch("scripts.bilingual.blender_layout", return_value=layout),
+                mock.patch("scripts.bilingual.set_blender_language") as set_language,
+            ):
+                uninstall_pack(
+                    root / "Blender.app", False, reset_language=True,
+                    user_datafiles=user_datafiles,
+                )
+
+            restored_mo = (
+                user_datafiles / "locale" / "zh_HANS" / "LC_MESSAGES" / "blender.mo"
+            )
+            self.assertEqual(b"official-zh-HANS", restored_mo.read_bytes())
+            set_language.assert_called_once_with(root / "blender", "zh_HANS")
 
 
 if __name__ == "__main__":

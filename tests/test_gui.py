@@ -73,6 +73,7 @@ class GUIBackendTests(unittest.TestCase):
         self.assertNotIn("confirm_frame", source)
         self.assertNotIn("ttk.Progressbar", source)
         self.assertIn("winfo_reqheight", source)
+        self.assertNotIn("还原官方简中", source)
 
     def test_macos_blender_process_detection_uses_exact_process_name(self) -> None:
         completed = mock.Mock(returncode=0, stdout="123\n", stderr="")
