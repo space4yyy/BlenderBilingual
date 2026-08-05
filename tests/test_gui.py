@@ -68,6 +68,7 @@ class GUIBackendTests(unittest.TestCase):
     def test_gui_has_no_inline_confirmation_panel(self) -> None:
         source = Path("blender_bilingual_gui.py").read_text(encoding="utf-8")
         self.assertNotIn("askokcancel", source)
+        self.assertNotIn("showinfo", source)
         self.assertNotIn("_request_confirmation", source)
         self.assertNotIn("confirm_frame", source)
         self.assertNotIn("ttk.Progressbar", source)

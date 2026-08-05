@@ -335,9 +335,8 @@ def main(argv: list[str] | None = None) -> int:
             if not quiet:
                 messagebox.showerror(APP_NAME, details, parent=self.root)
 
-        def _succeeded(self, title: str, details: str) -> None:
+        def _succeeded(self, _title: str, details: str) -> None:
             self._set_status(details.splitlines()[0], "success")
-            messagebox.showinfo(title, details, parent=self.root)
 
         def _set_status(self, details: str, kind: str = "info") -> None:
             self.status.set(details)
