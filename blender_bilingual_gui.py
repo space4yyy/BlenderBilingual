@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import tempfile
 import threading
 from pathlib import Path
@@ -57,6 +58,29 @@ def restore(blender: Path) -> str:
     return uninstall_pack(blender, False, reset_language=True)
 
 
+def blender_process_running(platform_name: str | None = None) -> bool:
+    """Return whether an interactive Blender process is currently running."""
+    platform_name = platform_name or sys.platform
+    command = (
+        ["tasklist", "/FI", "IMAGENAME eq blender.exe", "/NH"]
+        if platform_name == "win32"
+        else ["pgrep", "-x", "Blender" if platform_name == "darwin" else "blender"]
+    )
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if platform_name == "win32":
+        return "blender.exe" in result.stdout.casefold()
+    return result.returncode == 0
+
+
 def enable_windows_high_dpi(platform_name: str | None = None) -> None:
     """Ask Windows to render Tk at the monitor's native scale."""
     if (platform_name or sys.platform) != "win32":
@@ -72,7 +96,7 @@ def enable_windows_high_dpi(platform_name: str | None = None) -> None:
 def main(argv: list[str] | None = None) -> int:
     try:
         import tkinter as tk
-        from tkinter import filedialog, font as tkfont, ttk
+        from tkinter import filedialog, font as tkfont, messagebox, ttk
     except ImportError as exc:
         print("当前 Python 未包含 Tk 图形界面支持。请使用已打包的应用。", file=sys.stderr)
         return 2
@@ -86,12 +110,12 @@ def main(argv: list[str] | None = None) -> int:
             self.path = tk.StringVar()
             self.order = tk.StringVar(value=ORDER_ZH_EN)
             self.status = tk.StringVar(value="正在查找本机 Blender…")
-            self.confirmation = tk.StringVar()
             self.busy = False
-            self.pending_action = None
             self._configure_style()
             self._build_ui()
-            self.root.geometry("620x440")
+            self.root.update_idletasks()
+            width = max(620, self.root.winfo_reqwidth())
+            self.root.geometry(f"{width}x{self.root.winfo_reqheight()}")
             self.root.resizable(False, False)
             self.root.after(80, self._discover)
 
@@ -118,7 +142,6 @@ def main(argv: list[str] | None = None) -> int:
             style.configure("Info.Status.TLabel", foreground="#4b5563")
             style.configure("Success.Status.TLabel", foreground="#16803c")
             style.configure("Error.Status.TLabel", foreground="#b42318")
-            style.configure("Confirm.TFrame", padding=(12, 10))
             style.configure("Primary.TButton", padding=(16, 7))
             style.configure("Secondary.TButton", padding=(12, 7))
 
@@ -167,47 +190,19 @@ def main(argv: list[str] | None = None) -> int:
             self.order_buttons[0].grid(row=0, column=0, padx=(0, 32), sticky="w")
             self.order_buttons[1].grid(row=0, column=1, sticky="w")
 
-            self.confirm_frame = ttk.Frame(frame, style="Confirm.TFrame")
-            self.confirm_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(20, 0))
-            self.confirm_frame.columnconfigure(0, weight=1)
-            ttk.Label(
-                self.confirm_frame,
-                textvariable=self.confirmation,
-                wraplength=365,
-            ).grid(row=0, column=0, sticky="w")
-            ttk.Button(
-                self.confirm_frame, text="取消", command=self._cancel_confirmation
-            ).grid(row=0, column=1, padx=(12, 6))
-            self.confirm_button = ttk.Button(
-                self.confirm_frame,
-                text="继续",
-                style="Primary.TButton",
-                command=self._continue_confirmation,
-            )
-            self.confirm_button.grid(row=0, column=2)
-            self.confirm_frame.grid_remove()
-
             status_row = ttk.Frame(frame)
-            status_row.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(20, 0))
+            status_row.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(18, 0))
             status_row.columnconfigure(0, weight=1)
-            self.progress = ttk.Progressbar(status_row, mode="indeterminate", length=520)
-            self.progress.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-            self.progress.grid_remove()
             self.status_label = ttk.Label(
                 status_row,
                 textvariable=self.status,
                 style="Info.Status.TLabel",
-                wraplength=495,
+                wraplength=550,
             )
             self.status_label.grid(row=1, column=0, sticky="w")
-            self.copy_button = ttk.Button(
-                status_row, text="复制详情", command=self._copy_status
-            )
-            self.copy_button.grid(row=1, column=1, padx=(10, 0), sticky="e")
-            self.copy_button.grid_remove()
 
             actions = ttk.Frame(frame)
-            actions.grid(row=9, column=0, columnspan=2, sticky="e", pady=(24, 0))
+            actions.grid(row=8, column=0, columnspan=2, sticky="e", pady=(20, 0))
             self.restore_button = ttk.Button(
                 actions,
                 text="还原官方简中",
@@ -259,7 +254,6 @@ def main(argv: list[str] | None = None) -> int:
         def _check_selection(self) -> None:
             if self.busy or not self.path.get().strip():
                 return
-            self._cancel_confirmation()
             self._run(
                 lambda: blender_layout(self._selected_path()),
                 lambda result: self._set_status(f"已找到 Blender {result[2]}"),
@@ -271,19 +265,24 @@ def main(argv: list[str] | None = None) -> int:
                 blender = self._selected_path()
             except BilingualError as exc:
                 self._set_status(str(exc), "error")
+                messagebox.showerror(APP_NAME, str(exc), parent=self.root)
                 return
-            label = "中 - 英" if self.order.get() == ORDER_ZH_EN else "英 - 中"
-            self._request_confirmation(
-                f"请先关闭 Blender。将注入“{label}”语言并设为当前语言。",
-                "继续注入",
-                lambda: self._start_inject(blender),
-            )
+            if blender_process_running():
+                messagebox.showwarning(
+                    APP_NAME,
+                    "检测到 Blender 正在运行。请先退出 Blender，再重新执行注入。",
+                    parent=self.root,
+                )
+                return
+            self._start_inject(blender)
 
         def _start_inject(self, blender: Path) -> None:
             self._set_status("正在生成、校验并注入双语语言…")
             self._run(
                 lambda: inject(blender, self.order.get()),
-                lambda result: self._succeeded(result + "。重新打开 Blender 即可使用。"),
+                lambda result: self._succeeded(
+                    "注入完成", result + "。\n\n重新打开 Blender 即可使用。"
+                ),
             )
 
         def _restore(self) -> None:
@@ -291,44 +290,26 @@ def main(argv: list[str] | None = None) -> int:
                 blender = self._selected_path()
             except BilingualError as exc:
                 self._set_status(str(exc), "error")
+                messagebox.showerror(APP_NAME, str(exc), parent=self.root)
                 return
-            self._request_confirmation(
-                "请先关闭 Blender。将切回官方简中并移除本工具注入的语言。",
-                "继续还原",
-                lambda: self._start_restore(blender),
-            )
+            if blender_process_running():
+                messagebox.showwarning(
+                    APP_NAME,
+                    "检测到 Blender 正在运行。请先退出 Blender，再重新执行还原。",
+                    parent=self.root,
+                )
+                return
+            self._start_restore(blender)
 
         def _start_restore(self, blender: Path) -> None:
             self._set_status("正在还原官方简中…")
-            self._run(lambda: restore(blender), self._succeeded)
-
-        def _request_confirmation(self, message: str, button_text: str, action) -> None:
-            if self.busy:
-                return
-            self.pending_action = action
-            self.confirmation.set(message)
-            self.confirm_button.configure(text=button_text)
-            self.confirm_frame.grid()
-            self.confirm_button.focus_set()
-
-        def _cancel_confirmation(self) -> None:
-            self.pending_action = None
-            self.confirm_frame.grid_remove()
-
-        def _continue_confirmation(self) -> None:
-            action = self.pending_action
-            self._cancel_confirmation()
-            if action is not None:
-                action()
+            self._run(lambda: restore(blender), lambda result: self._succeeded("还原完成", result))
 
         def _run(self, work, success, quiet: bool = False) -> None:
             if self.busy:
                 return
-            self._cancel_confirmation()
             self.busy = True
             self._set_controls(False)
-            self.progress.grid()
-            self.progress.start(12)
 
             def worker() -> None:
                 try:
@@ -350,27 +331,21 @@ def main(argv: list[str] | None = None) -> int:
 
         def _failed(self, details: str, quiet: bool) -> None:
             self._set_idle()
-            self._set_status(details, "error" if not quiet else "info", copyable=not quiet)
+            self._set_status(details, "error" if not quiet else "info")
+            if not quiet:
+                messagebox.showerror(APP_NAME, details, parent=self.root)
 
-        def _succeeded(self, details: str) -> None:
-            self._set_status(details, "success")
+        def _succeeded(self, title: str, details: str) -> None:
+            self._set_status(details.splitlines()[0], "success")
+            messagebox.showinfo(title, details, parent=self.root)
 
-        def _set_status(self, details: str, kind: str = "info", copyable: bool = False) -> None:
+        def _set_status(self, details: str, kind: str = "info") -> None:
             self.status.set(details)
             style = {
                 "success": "Success.Status.TLabel",
                 "error": "Error.Status.TLabel",
             }.get(kind, "Info.Status.TLabel")
             self.status_label.configure(style=style)
-            if copyable:
-                self.copy_button.grid()
-            else:
-                self.copy_button.grid_remove()
-
-        def _copy_status(self) -> None:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(self.status.get())
-            self.root.update_idletasks()
 
         def _set_controls(self, enabled: bool) -> None:
             state = "normal" if enabled else "disabled"
@@ -383,8 +358,6 @@ def main(argv: list[str] | None = None) -> int:
 
         def _set_idle(self) -> None:
             self.busy = False
-            self.progress.stop()
-            self.progress.grid_remove()
             self._set_controls(True)
 
     enable_windows_high_dpi()

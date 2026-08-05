@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from blender_bilingual_gui import enable_windows_high_dpi, inject, restore
+from blender_bilingual_gui import blender_process_running, enable_windows_high_dpi, inject, restore
 from scripts.bilingual import MOCatalog, MOEntry, ORDER_EN_ZH
 
 
@@ -65,12 +65,24 @@ class GUIBackendTests(unittest.TestCase):
         self.assertNotIn("--privileged-action", source)
         self.assertNotIn("osascript", source)
 
-    def test_gui_uses_inline_feedback_instead_of_message_boxes(self) -> None:
+    def test_gui_has_no_inline_confirmation_panel(self) -> None:
         source = Path("blender_bilingual_gui.py").read_text(encoding="utf-8")
-        self.assertNotIn("messagebox", source)
         self.assertNotIn("askokcancel", source)
-        self.assertIn("_request_confirmation", source)
-        self.assertIn("复制详情", source)
+        self.assertNotIn("_request_confirmation", source)
+        self.assertNotIn("confirm_frame", source)
+        self.assertNotIn("ttk.Progressbar", source)
+        self.assertIn("winfo_reqheight", source)
+
+    def test_macos_blender_process_detection_uses_exact_process_name(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="123\n", stderr="")
+        with mock.patch("blender_bilingual_gui.subprocess.run", return_value=completed) as run:
+            self.assertTrue(blender_process_running("darwin"))
+        self.assertEqual(["pgrep", "-x", "Blender"], run.call_args.args[0])
+
+    def test_windows_blender_process_detection_handles_no_match(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="INFO: No tasks are running", stderr="")
+        with mock.patch("blender_bilingual_gui.subprocess.run", return_value=completed):
+            self.assertFalse(blender_process_running("win32"))
 
     def test_high_dpi_setup_is_a_noop_outside_windows(self) -> None:
         enable_windows_high_dpi("darwin")
