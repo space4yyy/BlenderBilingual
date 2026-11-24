@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small native-style GUI for injecting Blender bilingual translations."""
+"""Desktop GUI for managing Blender bilingual translations."""
 
 from __future__ import annotations
 
@@ -106,127 +106,162 @@ def main(argv: list[str] | None = None) -> int:
             self.root = root
             self.root.title(APP_NAME)
             self.root.columnconfigure(0, weight=1)
-            self.root.rowconfigure(0, weight=1)
             self.path = tk.StringVar()
             self.order = tk.StringVar(value=ORDER_ZH_EN)
             self.status = tk.StringVar(value="正在查找本机 Blender…")
             self.busy = False
             self._configure_style()
             self._build_ui()
+            self.path.trace_add("write", self._path_changed)
+            self._set_controls(False)
             self.root.update_idletasks()
-            width = max(620, self.root.winfo_reqwidth())
-            self.root.geometry(f"{width}x{self.root.winfo_reqheight()}")
-            self.root.resizable(False, False)
-            self.root.after(80, self._discover)
+            self.root.minsize(520, self.root.winfo_reqheight())
+            self.root.after_idle(self._discover)
 
         def _configure_style(self) -> None:
             style = ttk.Style(self.root)
-            available = style.theme_names()
-            preferred = "aqua" if sys.platform == "darwin" else "vista"
-            if preferred in available:
-                style.theme_use(preferred)
+            style.theme_use("clam")
+
+            body = "#f3f5f7"
+            surface = "#ffffff"
+            ink = "#202731"
+            border = "#abb6c2"
+            header = "#293541"
+            footer = "#e8edf2"
+            accent = "#a44220"
+            focus = "#284f7a"
 
             default_font = tkfont.nametofont("TkDefaultFont")
             if sys.platform == "win32":
                 default_font.configure(family="Segoe UI", size=10)
                 tkfont.nametofont("TkTextFont").configure(family="Segoe UI", size=10)
-            title_font = default_font.copy()
-            title_font.configure(size=20 if sys.platform == "darwin" else 18, weight="bold")
-            section_font = default_font.copy()
-            section_font.configure(weight="bold")
+            family = default_font.cget("family")
+            title_font = (family, 22, "bold")
+            section_font = (family, default_font.cget("size"), "bold")
+            example_font = (family, 15, "bold")
 
-            style.configure("App.TFrame", padding=0)
-            style.configure("Title.TLabel", font=title_font)
+            style.configure("TFrame", background=body)
+            style.configure("TLabel", background=body, foreground=ink)
+            style.configure("Header.TFrame", background=header)
+            style.configure("Title.TLabel", background=header, foreground=surface, font=title_font)
+            style.configure("Subtitle.TLabel", background=header, foreground="#d3dce5")
             style.configure("Section.TLabel", font=section_font)
-            style.configure("Subtitle.TLabel", foreground="#666666")
-            style.configure("Info.Status.TLabel", foreground="#4b5563")
-            style.configure("Success.Status.TLabel", foreground="#16803c")
-            style.configure("Error.Status.TLabel", foreground="#b42318")
-            style.configure("Primary.TButton", padding=(16, 7))
-            style.configure("Secondary.TButton", padding=(12, 7))
+            style.configure("Footer.TFrame", background=footer)
+            style.configure("Status.TLabel", background=footer, foreground="#3c4e60")
+            style.configure("Success.Status.TLabel", foreground="#1c6247")
+            style.configure("Warning.Status.TLabel", foreground="#785019")
+            style.configure("Error.Status.TLabel", foreground="#a32a22")
+
+            style.configure("TCombobox", padding=(8, 6), fieldbackground=surface,
+                            background=surface, foreground=ink, arrowcolor=ink,
+                            bordercolor=border, lightcolor=surface, darkcolor=surface)
+            style.map("TCombobox", bordercolor=[("focus", focus)],
+                      fieldbackground=[("disabled", footer)],
+                      foreground=[("disabled", "#566575")],
+                      background=[("active", footer), ("pressed", footer)])
+
+            style.configure("Preview.TFrame", background=surface, relief="solid", borderwidth=1,
+                            bordercolor=border, lightcolor=surface, darkcolor=surface)
+            style.configure("Preview.TLabel", background=surface, font=example_font)
+            style.configure("TRadiobutton", background=surface, foreground=ink,
+                            indicatorforeground=accent, indicatorbackground=surface,
+                            upperbordercolor=border, lowerbordercolor=border,
+                            focuscolor=focus, padding=(0, 2))
+
+            style.configure("TButton", padding=(13, 8), foreground=ink, background=surface,
+                            bordercolor=border, lightcolor=surface, darkcolor=surface,
+                            focuscolor=focus)
+            style.map("TButton", background=[("disabled", footer), ("pressed", "#d8e0e8"),
+                                             ("active", body)],
+                      foreground=[("disabled", "#566575")], bordercolor=[("focus", focus)],
+                      lightcolor=[], darkcolor=[])
+            style.configure("Primary.TButton", padding=(18, 8), font=section_font,
+                            foreground=surface, background=accent, bordercolor=accent,
+                            lightcolor=accent, darkcolor=accent, focuscolor=surface)
+            style.map("Primary.TButton", background=[("disabled", "#d8e0e8"),
+                                                     ("pressed", "#773016"), ("active", "#8b371b")],
+                      foreground=[("disabled", "#566575")],
+                      bordercolor=[("disabled", border), ("focus", focus)])
 
         def _build_ui(self) -> None:
-            frame = ttk.Frame(self.root, padding=(24, 22), style="App.TFrame")
-            frame.grid(sticky="nsew")
-            frame.columnconfigure(0, weight=1)
-            frame.columnconfigure(1, weight=1)
-
-            ttk.Label(frame, text="Blender 双语工具", style="Title.TLabel").grid(
-                row=0, column=0, columnspan=2, sticky="w"
-            )
-            ttk.Label(
-                frame,
-                text="从 Blender 自带语言生成双语界面，不覆盖官方简中。",
-                style="Subtitle.TLabel",
-            ).grid(
-                row=1, column=0, columnspan=2, sticky="w", pady=(4, 22)
+            header = ttk.Frame(self.root, padding=(24, 18), style="Header.TFrame")
+            header.grid(row=0, column=0, sticky="ew")
+            ttk.Label(header, text=APP_NAME, style="Title.TLabel").grid(sticky="w")
+            ttk.Label(header, text="为 Blender 界面添加简中和英文。", style="Subtitle.TLabel").grid(
+                sticky="w", pady=(4, 0)
             )
 
-            ttk.Label(frame, text="Blender 位置", style="Section.TLabel").grid(
-                row=2, column=0, columnspan=2, sticky="w"
-            )
-            location_row = ttk.Frame(frame)
-            location_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(7, 0))
+            body = ttk.Frame(self.root, padding=(24, 20))
+            body.grid(row=1, column=0, sticky="nsew")
+            body.columnconfigure(0, weight=1)
+            self.root.rowconfigure(1, weight=1)
+
+            location_label = ttk.Label(body, text="Blender 安装位置", style="Section.TLabel")
+            location_label.grid(sticky="w")
+            location_row = ttk.Frame(body)
+            location_row.grid(sticky="ew", pady=(8, 0))
             location_row.columnconfigure(0, weight=1)
-            self.location = ttk.Combobox(location_row, textvariable=self.path, width=57)
+            self.location = ttk.Combobox(location_row, textvariable=self.path, width=44)
             self.location.grid(row=0, column=0, sticky="ew")
-            self.location.bind("<<ComboboxSelected>>", lambda _event: self._check_selection())
-            self.location.bind("<FocusOut>", lambda _event: self._check_selection())
+            self.location.bind("<<ComboboxSelected>>", self._check_selection)
+            self.location.bind("<Return>", self._check_selection)
             self.browse_button = ttk.Button(location_row, text="手动选择…", command=self._browse)
-            self.browse_button.grid(
-                row=0, column=1, padx=(8, 0)
-            )
+            self.browse_button.grid(row=0, column=1, padx=(10, 0), sticky="ns")
 
-            ttk.Separator(frame).grid(row=4, column=0, columnspan=2, sticky="ew", pady=20)
-            ttk.Label(frame, text="显示顺序", style="Section.TLabel").grid(
-                row=5, column=0, columnspan=2, sticky="w"
-            )
-            options = ttk.Frame(frame)
-            options.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            ttk.Label(body, text="显示顺序", style="Section.TLabel").grid(sticky="w", pady=(20, 8))
+            options = ttk.Frame(body)
+            options.grid(sticky="ew")
+            options.columnconfigure((0, 1), weight=1, uniform="order")
             self.order_buttons = (
-                ttk.Radiobutton(options, text="中 - 英", variable=self.order, value=ORDER_ZH_EN),
-                ttk.Radiobutton(options, text="英 - 中", variable=self.order, value=ORDER_EN_ZH),
+                self._order_option(options, 0, "中 - 英", "文件 File", ORDER_ZH_EN),
+                self._order_option(options, 1, "英 - 中", "File 文件", ORDER_EN_ZH),
             )
-            self.order_buttons[0].grid(row=0, column=0, padx=(0, 32), sticky="w")
-            self.order_buttons[1].grid(row=0, column=1, sticky="w")
 
-            status_row = ttk.Frame(frame)
-            status_row.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(18, 0))
-            status_row.columnconfigure(0, weight=1)
-            self.status_label = ttk.Label(
-                status_row,
-                textvariable=self.status,
-                style="Info.Status.TLabel",
-                wraplength=550,
-            )
-            self.status_label.grid(row=1, column=0, sticky="w")
-
-            actions = ttk.Frame(frame)
-            actions.grid(row=8, column=0, columnspan=2, sticky="e", pady=(20, 0))
-            self.restore_button = ttk.Button(
-                actions,
-                text="还原",
-                style="Secondary.TButton",
-                command=self._restore,
-            )
-            self.restore_button.grid(row=0, column=0, padx=(0, 8))
+            footer = ttk.Frame(self.root, padding=(24, 14), style="Footer.TFrame")
+            footer.grid(row=2, column=0, sticky="ew")
+            footer.columnconfigure(0, weight=1)
+            footer.rowconfigure(0, minsize=40)
+            self.status_label = ttk.Label(footer, textvariable=self.status, style="Status.TLabel",
+                                          wraplength=472)
+            self.status_label.grid(row=0, column=0, columnspan=2, sticky="nw")
+            footer.bind("<Configure>", lambda event: self.status_label.configure(
+                wraplength=max(1, event.width - 48)
+            ))
+            self.restore_button = ttk.Button(footer, text="还原", width=7, command=self._restore)
+            self.restore_button.grid(row=1, column=0, sticky="e", padx=(0, 8))
             self.inject_button = ttk.Button(
-                actions,
-                text="注入并启用",
-                style="Primary.TButton",
-                command=self._inject,
+                footer, text="注入并启用", style="Primary.TButton", command=self._inject
             )
-            self.inject_button.grid(row=0, column=1)
+            self.inject_button.grid(row=1, column=1, sticky="e")
+
+        def _order_option(self, parent, column: int, label: str, example: str, order: str):
+            panel = ttk.Frame(parent, padding=(12, 8), style="Preview.TFrame")
+            panel.grid(row=0, column=column, sticky="ew", padx=(0, 5) if column == 0 else (5, 0))
+            button = ttk.Radiobutton(panel, text=label, variable=self.order, value=order)
+            button.grid(sticky="w")
+            preview = ttk.Label(panel, text=example, style="Preview.TLabel")
+            preview.grid(sticky="w", padx=(18, 0), pady=(4, 0))
+
+            def select(_event) -> None:
+                if not button.instate(("disabled",)):
+                    button.focus_set()
+                    button.invoke()
+
+            panel.bind("<Button-1>", select)
+            preview.bind("<Button-1>", select)
+            return button
 
         def _discover(self) -> None:
-            paths = discover_blender_installations()
+            self._run(discover_blender_installations, self._set_discovered, quiet=True)
+
+        def _set_discovered(self, paths: list[Path]) -> None:
             values = [str(path) for path in paths]
             self.location.configure(values=values)
             if values:
                 self.path.set(values[0])
                 self._check_selection()
             else:
-                self._set_status("未自动找到 Blender，请手动选择安装目录或可执行文件。")
+                self._set_status("未找到 Blender。请选择安装位置，或粘贴路径。")
 
         def _browse(self) -> None:
             if sys.platform == "darwin":
@@ -234,76 +269,82 @@ def main(argv: list[str] | None = None) -> int:
                     title="选择 Blender.app",
                     initialdir="/Applications",
                     filetypes=(("Blender 应用", "*.app"), ("所有文件", "*.*")),
+                    parent=self.root,
                 )
             elif sys.platform == "win32":
                 selected = filedialog.askopenfilename(
-                    title="选择 blender.exe", filetypes=(("Blender", "blender.exe"), ("所有文件", "*.*"))
+                    title="选择 blender.exe",
+                    filetypes=(("Blender", "blender.exe"), ("所有文件", "*.*")),
+                    parent=self.root,
                 )
             else:
-                selected = filedialog.askopenfilename(title="选择 Blender 可执行文件")
+                selected = filedialog.askopenfilename(
+                    title="选择 Blender 可执行文件", parent=self.root
+                )
             if selected:
                 self.path.set(selected)
                 self._check_selection()
 
-        def _selected_path(self) -> Path:
+        def _selected_path(self) -> Path | None:
             value = self.path.get().strip().strip('"')
-            if not value:
-                raise BilingualError("请先选择 Blender 安装位置")
-            return Path(value)
+            return Path(value) if value.strip() else None
 
-        def _check_selection(self) -> None:
-            if self.busy or not self.path.get().strip():
+        def _path_changed(self, *_args) -> None:
+            if self.busy:
                 return
+            self._set_controls(True)
+            if self._selected_path() is None:
+                self._set_status("请选择 Blender 安装位置，或粘贴路径。")
+            else:
+                self._set_status("按 Enter 检查 Blender 版本。")
+
+        def _check_selection(self, _event=None) -> None:
+            blender = self._selected_path()
+            if self.busy or blender is None:
+                return
+            self._set_status("正在检查 Blender 版本…")
             self._run(
-                lambda: blender_layout(self._selected_path()),
+                lambda: blender_layout(blender),
                 lambda result: self._set_status(f"已找到 Blender {result[2]}"),
                 quiet=True,
             )
 
         def _inject(self) -> None:
-            try:
-                blender = self._selected_path()
-            except BilingualError as exc:
-                self._set_status(str(exc), "error")
-                messagebox.showerror(APP_NAME, str(exc), parent=self.root)
-                return
-            if blender_process_running():
-                messagebox.showwarning(
-                    APP_NAME,
-                    "检测到 Blender 正在运行。请先退出 Blender，再重新执行注入。",
-                    parent=self.root,
-                )
-                return
-            self._start_inject(blender)
-
-        def _start_inject(self, blender: Path) -> None:
-            self._set_status("正在生成、校验并注入双语语言…")
-            self._run(
-                lambda: inject(blender, self.order.get()),
-                lambda result: self._succeeded(
-                    "注入完成", result + "。\n\n重新打开 Blender 即可使用。"
-                ),
+            order = self.order.get()
+            self._run_action(
+                lambda blender: inject(blender, order),
+                "正在生成并启用双语语言…",
+                "双语语言已启用。重新打开 Blender 即可使用。",
             )
 
         def _restore(self) -> None:
-            try:
-                blender = self._selected_path()
-            except BilingualError as exc:
-                self._set_status(str(exc), "error")
-                messagebox.showerror(APP_NAME, str(exc), parent=self.root)
-                return
-            if blender_process_running():
-                messagebox.showwarning(
-                    APP_NAME,
-                    "检测到 Blender 正在运行。请先退出 Blender，再重新执行还原。",
-                    parent=self.root,
-                )
-                return
-            self._start_restore(blender)
+            self._run_action(
+                restore,
+                "正在切回官方简中…",
+                "已切回官方简中。重新打开 Blender 即可使用。",
+            )
 
-        def _start_restore(self, blender: Path) -> None:
-            self._set_status("正在还原…")
-            self._run(lambda: restore(blender), lambda result: self._succeeded("还原完成", result))
+        def _run_action(self, action, pending: str, done: str) -> None:
+            blender = self._selected_path()
+            if self.busy or blender is None:
+                return
+            self._set_status(pending)
+
+            def work() -> bool:
+                if blender_process_running():
+                    return False
+                action(blender)
+                return True
+
+            def finish(applied: bool) -> None:
+                if applied:
+                    self._set_status(done, "success")
+                else:
+                    warning = "检测到 Blender 正在运行。请退出 Blender 后重试。"
+                    self._set_status(warning, "warning")
+                    messagebox.showwarning(APP_NAME, warning, parent=self.root)
+
+            self._run(work, finish)
 
         def _run(self, work, success, quiet: bool = False) -> None:
             if self.busy:
@@ -331,25 +372,20 @@ def main(argv: list[str] | None = None) -> int:
 
         def _failed(self, details: str, quiet: bool) -> None:
             self._set_idle()
-            self._set_status(details, "error" if not quiet else "info")
+            self._set_status(details, "error")
             if not quiet:
                 messagebox.showerror(APP_NAME, details, parent=self.root)
 
-        def _succeeded(self, _title: str, details: str) -> None:
-            self._set_status(details.splitlines()[0], "success")
-
         def _set_status(self, details: str, kind: str = "info") -> None:
             self.status.set(details)
-            style = {
-                "success": "Success.Status.TLabel",
-                "error": "Error.Status.TLabel",
-            }.get(kind, "Info.Status.TLabel")
+            style = "Status.TLabel" if kind == "info" else f"{kind.title()}.Status.TLabel"
             self.status_label.configure(style=style)
 
         def _set_controls(self, enabled: bool) -> None:
             state = "normal" if enabled else "disabled"
-            self.inject_button.configure(state=state)
-            self.restore_button.configure(state=state)
+            action_state = state if self._selected_path() is not None else "disabled"
+            self.inject_button.configure(state=action_state)
+            self.restore_button.configure(state=action_state)
             self.location.configure(state=state)
             self.browse_button.configure(state=state)
             for button in self.order_buttons:
