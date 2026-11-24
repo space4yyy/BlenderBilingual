@@ -36,6 +36,20 @@ Windows 成品目前没有 Authenticode 代码签名，因此 Microsoft Defender
 
 macOS 与 Windows 均不需要管理员权限。工具只读取 Blender 安装目录中的官方语言资源，生成结果写入当前账户的 Blender 用户数据目录，不修改 `Blender.app`、`Program Files` 或官方简中 MO。
 
+## 界面预览
+
+### 双语工具主窗口
+
+![Blender 双语工具主窗口，显示安装位置和双语顺序预览](docs/screenshots/main-window.png)
+
+### Blender 菜单：英文在前
+
+![英 - 中模式下的 Blender 菜单，例如 File 文件](docs/screenshots/blender-en-zh.png)
+
+### Blender 菜单：中文在前
+
+![中 - 英模式下的 Blender 菜单，例如 文件 File](docs/screenshots/blender-zh-en.png)
+
 ## 工作方式
 
 工具不会内置特定 Blender 版本的语言包。每次注入时，它会：
