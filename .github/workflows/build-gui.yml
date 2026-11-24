@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             artifact: BlenderBilingual-macOS
             output: BlenderBilingual-macOS.dmg
           - os: windows-latest
